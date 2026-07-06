@@ -418,7 +418,7 @@ class WhatsAppService {
       } else {
         await this.sock.sendMessage(
           chatId,
-          { text: 'Balas (reply) mesej gambar/video "Lihat Sekali" dengan !vv untuk buka semula.' },
+          { text: 'Reply to a "view once" image/video message with !vv to reopen it.' },
           { quoted: message }
         );
       }
@@ -426,7 +426,7 @@ class WhatsAppService {
       console.error('[WA] Failed to process !vv command:', error.message);
       await this.sock.sendMessage(
         chatId,
-        { text: 'Gagal membuka semula media tersebut.' },
+        { text: 'Failed to reopen that media.' },
         { quoted: message }
       );
     }

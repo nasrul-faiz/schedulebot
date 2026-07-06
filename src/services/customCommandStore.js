@@ -16,7 +16,7 @@ const DEFAULT_COMMANDS = [
   },
   {
     trigger: '!vv',
-    response: 'Reply mesej gambar/video view-once dengan !vv untuk buka semula media.',
+    response: 'Reply to a view-once image/video message with !vv to reopen the media.',
     description: 'Open quoted view-once media',
     category: 'Utility',
     createdAt: new Date().toISOString(),
