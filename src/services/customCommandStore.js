@@ -21,6 +21,41 @@ const DEFAULT_COMMANDS = [
     category: 'Utility',
     createdAt: new Date().toISOString(),
   },
+  {
+    trigger: '!ytmp3',
+    response: '🎵 Download audio YouTube. Usage: !ytmp3 <judul atau link YouTube>',
+    description: 'Download YouTube audio (MP3)',
+    category: 'Media',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    trigger: '!ytmp4',
+    response: '🎬 Download video YouTube. Usage: !ytmp4 <judul atau link YouTube>',
+    description: 'Download YouTube video (MP4)',
+    category: 'Media',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    trigger: '!facebook',
+    response: '📘 Download video Facebook. Usage: !facebook <link-facebook>',
+    description: 'Download Facebook video',
+    category: 'Media',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    trigger: '!instagram',
+    response: '📸 Download media Instagram. Usage: !instagram <link-instagram>',
+    description: 'Download Instagram media',
+    category: 'Media',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    trigger: '!sticker',
+    response: '🧩 Buat sticker. Usage: reply/kirim gambar/video lalu ketik !sticker',
+    description: 'Create sticker from image/video',
+    category: 'Media',
+    createdAt: new Date().toISOString(),
+  },
 ];
 
 function loadCommands() {

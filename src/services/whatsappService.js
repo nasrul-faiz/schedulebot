@@ -1,14 +1,20 @@
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const qrcode = require('qrcode');
 const pino = require('pino');
 const baileys = require('atexovi-baileys');
+const ytSearch = require('yt-search');
+const ffmpegPath = require('ffmpeg-static');
 
 const customCommandStore = require('./customCommandStore');
 const deletedMessageStore = require('./deletedMessageStore');
 const { sendInteractiveButtons } = require('../lib/interactiveButtons');
 
 const uploadDir = path.join(process.cwd(), 'uploads');
+const tempDir = path.join(uploadDir, 'tmp');
+const execFileAsync = promisify(execFile);
 
 const makeWASocket = baileys.default;
 const {
@@ -20,6 +26,95 @@ const {
   normalizeMessageContent,
   downloadContentFromMessage,
 } = baileys;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function stripCommandPrefix(text) {
+  return String(text || '').replace(/^![^\s]+\s*/i, '').trim();
+}
+
+function isLikelyUrl(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch (error) {
+    return false;
+  }
+}
+
+function parseYouTubeInput(input) {
+  try {
+    const raw = String(input || '').trim();
+    if (!raw) return null;
+
+    const url = new URL(raw);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, '').replace(/^m\./, '');
+    const isYoutubeHost = hostname === 'youtu.be'
+      || hostname === 'youtube.com'
+      || hostname === 'music.youtube.com'
+      || hostname.endsWith('.youtube.com')
+      || hostname.endsWith('youtube-nocookie.com');
+
+    if (!isYoutubeHost) return null;
+
+    const parts = url.pathname.split('/').filter(Boolean);
+    let videoId = '';
+
+    if (hostname === 'youtu.be') {
+      videoId = parts[0] || '';
+    } else if (url.searchParams.get('v')) {
+      videoId = url.searchParams.get('v') || '';
+    } else if (['shorts', 'embed', 'live', 'v'].includes(parts[0])) {
+      videoId = parts[1] || '';
+    } else if (parts[0] && /^[a-zA-Z0-9_-]{11}$/.test(parts[0])) {
+      videoId = parts[0];
+    }
+
+    if (videoId && !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+      videoId = '';
+    }
+
+    return {
+      videoId,
+      playlistOnly: Boolean(url.searchParams.get('list')) && !videoId,
+      canonicalUrl: videoId ? `https://www.youtube.com/watch?v=${videoId}` : raw,
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        ...(options.headers || {}),
+      },
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = 30000) {
+  const response = await fetchWithTimeout(url, {}, timeoutMs);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function sanitizeFileName(value, fallback) {
+  const clean = String(value || '').replace(/[\\/:*?"<>|]+/g, '').trim();
+  return clean || fallback;
+}
 
 class WhatsAppService {
   constructor() {
@@ -348,6 +443,11 @@ class WhatsAppService {
         continue;
       }
 
+      if (text.trim().startsWith('!')) {
+        const handled = await this.handleBuiltInCommand(chatId, message, content, text);
+        if (handled) continue;
+      }
+
       const matched = customCommandStore.matchCommand(text);
       if (!matched) continue;
 
@@ -389,6 +489,419 @@ class WhatsAppService {
     }
 
     return '';
+  }
+
+  async handleBuiltInCommand(chatId, message, content, text) {
+    const normalized = String(text || '').trim();
+    const command = normalized.split(/\s+/)[0].toLowerCase();
+    const args = stripCommandPrefix(normalized);
+
+    if (command === '!ytmp3') {
+      await this.handleYtmp3Command(chatId, message, args);
+      return true;
+    }
+
+    if (command === '!ytmp4') {
+      await this.handleYtmp4Command(chatId, message, args);
+      return true;
+    }
+
+    if (command === '!facebook' || command === '!fb') {
+      await this.handleFacebookCommand(chatId, message, args);
+      return true;
+    }
+
+    if (command === '!instagram' || command === '!ig') {
+      await this.handleInstagramCommand(chatId, message, args);
+      return true;
+    }
+
+    if (command === '!sticker' || command === '!s') {
+      await this.handleStickerCommand(chatId, message, content);
+      return true;
+    }
+
+    return false;
+  }
+
+  async resolveYouTubeTarget(input) {
+    const raw = String(input || '').trim();
+    if (!raw) {
+      throw new Error('Usage: !ytmp3 <judul atau link YouTube>');
+    }
+
+    if (isLikelyUrl(raw)) {
+      const parsed = parseYouTubeInput(raw);
+      if (!parsed || parsed.playlistOnly || !parsed.videoId) {
+        throw new Error('Link YouTube tidak valid. Gunakan link video, bukan playlist.');
+      }
+
+      const info = await ytSearch({ videoId: parsed.videoId });
+      return {
+        url: parsed.canonicalUrl,
+        title: info?.title || 'YouTube Audio',
+        thumbnail: info?.thumbnail || '',
+      };
+    }
+
+    const search = await ytSearch(raw);
+    const first = Array.isArray(search?.videos) ? search.videos[0] : null;
+    if (!first || !first.url) {
+      throw new Error('Video tidak ditemukan, coba kata kunci lain.');
+    }
+
+    return {
+      url: first.url,
+      title: first.title || raw,
+      thumbnail: first.thumbnail || '',
+    };
+  }
+
+  async resolveDownloadFromProviders(providers) {
+    for (const provider of providers) {
+      try {
+        const result = await provider();
+        if (result?.url) return result;
+      } catch (error) {
+        console.log(`[WA] Provider failed: ${error.message}`);
+      }
+      await sleep(300);
+    }
+
+    return null;
+  }
+
+  async handleYtmp3Command(chatId, message, args) {
+    if (!this.sock) return;
+
+    try {
+      const target = await this.resolveYouTubeTarget(args);
+      const providers = [
+        async () => {
+          const data = await fetchJsonWithTimeout(
+            `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(target.url)}&format=mp3`,
+            40000
+          );
+          return { url: data?.downloadURL, title: data?.title };
+        },
+        async () => {
+          const data = await fetchJsonWithTimeout(
+            `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(target.url)}`,
+            40000
+          );
+          return { url: data?.data?.download_url, title: data?.data?.title };
+        },
+        async () => {
+          const data = await fetchJsonWithTimeout(
+            `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(target.url)}`,
+            40000
+          );
+          return { url: data?.dl, title: data?.title };
+        },
+      ];
+
+      if (target.thumbnail) {
+        await this.sock.sendMessage(
+          chatId,
+          { image: { url: target.thumbnail }, caption: `🎵 ${target.title}\n⏳ Sedang menyiapkan audio...` },
+          { quoted: message }
+        );
+      }
+
+      const picked = await this.resolveDownloadFromProviders(providers);
+      if (!picked?.url) {
+        await this.sock.sendMessage(
+          chatId,
+          { text: 'Gagal mengambil link audio. Coba lagi beberapa saat lagi.' },
+          { quoted: message }
+        );
+        return;
+      }
+
+      const response = await fetchWithTimeout(picked.url, {}, 120000);
+      if (!response.ok) throw new Error(`Audio download failed (HTTP ${response.status})`);
+
+      const contentType = response.headers.get('content-type') || 'audio/mpeg';
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const title = sanitizeFileName(picked.title || target.title, 'audio');
+
+      await this.sock.sendMessage(
+        chatId,
+        {
+          audio: buffer,
+          mimetype: contentType.includes('audio/') ? contentType : 'audio/mpeg',
+          fileName: `${title}.mp3`,
+          ptt: false,
+        },
+        { quoted: message }
+      );
+    } catch (error) {
+      console.error('[WA] !ytmp3 error:', error.message);
+      await this.sock.sendMessage(chatId, { text: `Gagal proses !ytmp3: ${error.message}` }, { quoted: message });
+    }
+  }
+
+  async handleYtmp4Command(chatId, message, args) {
+    if (!this.sock) return;
+
+    try {
+      const target = await this.resolveYouTubeTarget(args);
+      const providers = [
+        async () => {
+          const data = await fetchJsonWithTimeout(
+            `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(target.url)}&format=mp4`,
+            40000
+          );
+          return { url: data?.downloadURL, title: data?.title };
+        },
+        async () => {
+          const data = await fetchJsonWithTimeout(
+            `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(target.url)}`,
+            40000
+          );
+          return { url: data?.data?.download_url, title: data?.data?.title };
+        },
+        async () => {
+          const data = await fetchJsonWithTimeout(
+            `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(target.url)}`,
+            40000
+          );
+          return { url: data?.result?.mp4, title: data?.result?.title || data?.title };
+        },
+      ];
+
+      const picked = await this.resolveDownloadFromProviders(providers);
+      if (!picked?.url) {
+        await this.sock.sendMessage(
+          chatId,
+          { text: 'Gagal mengambil link video. Coba lagi nanti.' },
+          { quoted: message }
+        );
+        return;
+      }
+
+      const title = sanitizeFileName(picked.title || target.title, 'video');
+      await this.sock.sendMessage(
+        chatId,
+        {
+          video: { url: picked.url },
+          mimetype: 'video/mp4',
+          fileName: `${title}.mp4`,
+          caption: `🎬 ${picked.title || target.title}`,
+        },
+        { quoted: message }
+      );
+    } catch (error) {
+      console.error('[WA] !ytmp4 error:', error.message);
+      await this.sock.sendMessage(chatId, { text: `Gagal proses !ytmp4: ${error.message}` }, { quoted: message });
+    }
+  }
+
+  extractFacebookVideoUrl(data) {
+    if (!data || typeof data !== 'object') return '';
+
+    const candidates = [
+      data?.result?.media?.video_hd,
+      data?.result?.media?.video_sd,
+      data?.result?.url,
+      data?.result?.download,
+      data?.result?.video,
+      data?.data?.url,
+      data?.data?.download,
+      data?.url,
+      data?.download,
+      data?.video,
+    ];
+
+    for (const item of candidates) {
+      if (typeof item === 'string' && /^https?:\/\//i.test(item)) {
+        return item;
+      }
+    }
+
+    if (Array.isArray(data?.data)) {
+      const fromArray = data.data.find((item) => item?.url);
+      if (fromArray?.url) return fromArray.url;
+    }
+
+    return '';
+  }
+
+  async handleFacebookCommand(chatId, message, args) {
+    if (!this.sock) return;
+
+    const url = String(args || '').trim();
+    if (!url || !/facebook\.com|fb\.watch/i.test(url)) {
+      await this.sock.sendMessage(
+        chatId,
+        { text: 'Usage: !facebook <link-facebook>\nContoh: !facebook https://www.facebook.com/...' },
+        { quoted: message }
+      );
+      return;
+    }
+
+    try {
+      const data = await fetchJsonWithTimeout(
+        `https://api.hanggts.xyz/download/facebook?url=${encodeURIComponent(url)}`,
+        40000
+      );
+      const videoUrl = this.extractFacebookVideoUrl(data);
+      if (!videoUrl) throw new Error('Video tidak ditemukan dari API');
+
+      const title = data?.result?.info?.title || data?.result?.title || data?.title || 'Facebook Video';
+      await this.sock.sendMessage(
+        chatId,
+        { video: { url: videoUrl }, mimetype: 'video/mp4', caption: `📘 ${title}` },
+        { quoted: message }
+      );
+    } catch (error) {
+      console.error('[WA] !facebook error:', error.message);
+      await this.sock.sendMessage(chatId, { text: 'Gagal download video Facebook. Coba link lain.' }, { quoted: message });
+    }
+  }
+
+  extractInstagramMediaUrls(data) {
+    const links = [];
+
+    if (Array.isArray(data?.result)) {
+      for (const item of data.result) {
+        if (item?.url) links.push(item.url);
+      }
+    }
+
+    if (Array.isArray(data?.data)) {
+      for (const item of data.data) {
+        if (typeof item === 'string' && /^https?:\/\//i.test(item)) links.push(item);
+        if (item?.url) links.push(item.url);
+      }
+    }
+
+    if (typeof data?.url === 'string') links.push(data.url);
+    if (typeof data?.download === 'string') links.push(data.download);
+
+    return [...new Set(links.filter((item) => /^https?:\/\//i.test(item)))];
+  }
+
+  async handleInstagramCommand(chatId, message, args) {
+    if (!this.sock) return;
+
+    const url = String(args || '').trim();
+    if (!url || !/instagram\.com|instagr\.am/i.test(url)) {
+      await this.sock.sendMessage(
+        chatId,
+        { text: 'Usage: !instagram <link-instagram>\nContoh: !instagram https://www.instagram.com/reel/...' },
+        { quoted: message }
+      );
+      return;
+    }
+
+    const endpoints = [
+      `https://api.hanggts.xyz/download/instagram?url=${encodeURIComponent(url)}`,
+      `https://api.yupra.my.id/api/downloader/instagram?url=${encodeURIComponent(url)}`,
+    ];
+
+    try {
+      let mediaUrls = [];
+      for (const endpoint of endpoints) {
+        try {
+          const data = await fetchJsonWithTimeout(endpoint, 40000);
+          mediaUrls = this.extractInstagramMediaUrls(data);
+          if (mediaUrls.length) break;
+        } catch (error) {
+          console.log('[WA] Instagram provider failed:', error.message);
+        }
+      }
+
+      if (!mediaUrls.length) {
+        throw new Error('Media tidak ditemukan');
+      }
+
+      const limited = mediaUrls.slice(0, 5);
+      for (const mediaUrl of limited) {
+        const lower = mediaUrl.toLowerCase();
+        const isVideo = lower.includes('.mp4') || lower.includes('/video');
+        if (isVideo) {
+          await this.sock.sendMessage(chatId, { video: { url: mediaUrl }, mimetype: 'video/mp4' }, { quoted: message });
+        } else {
+          await this.sock.sendMessage(chatId, { image: { url: mediaUrl } }, { quoted: message });
+        }
+      }
+    } catch (error) {
+      console.error('[WA] !instagram error:', error.message);
+      await this.sock.sendMessage(chatId, { text: 'Gagal download media Instagram. Pastikan link publik.' }, { quoted: message });
+    }
+  }
+
+  resolveStickerMedia(content) {
+    const quoted = content?.extendedTextMessage?.contextInfo?.quotedMessage || null;
+    const sources = [quoted, content];
+
+    for (const source of sources) {
+      if (source?.stickerMessage) return { media: source.stickerMessage, type: 'sticker' };
+      if (source?.imageMessage) return { media: source.imageMessage, type: 'image' };
+      if (source?.videoMessage) return { media: source.videoMessage, type: 'video' };
+    }
+
+    return null;
+  }
+
+  async streamToBuffer(stream) {
+    let buffer = Buffer.from([]);
+    for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+    return buffer;
+  }
+
+  async convertToWebp(inputBuffer, mediaType) {
+    if (mediaType === 'sticker') return inputBuffer;
+    if (!ffmpegPath) {
+      throw new Error('ffmpeg binary tidak tersedia di server');
+    }
+
+    await fs.promises.mkdir(tempDir, { recursive: true });
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const inputExt = mediaType === 'video' ? 'mp4' : 'jpg';
+    const inputPath = path.join(tempDir, `${id}.${inputExt}`);
+    const outputPath = path.join(tempDir, `${id}.webp`);
+
+    try {
+      await fs.promises.writeFile(inputPath, inputBuffer);
+
+      const filterBase = 'scale=512:512:force_original_aspect_ratio=decrease:flags=lanczos,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000,setsar=1';
+      const videoFilter = `fps=12,${filterBase}`;
+      const args = mediaType === 'video'
+        ? ['-y', '-i', inputPath, '-t', '7', '-vf', videoFilter, '-vcodec', 'libwebp', '-lossless', '0', '-q:v', '65', '-preset', 'default', '-loop', '0', '-an', '-vsync', '0', outputPath]
+        : ['-y', '-i', inputPath, '-vf', filterBase, '-vcodec', 'libwebp', '-lossless', '0', '-q:v', '75', '-preset', 'default', '-loop', '0', '-an', '-vsync', '0', outputPath];
+
+      await execFileAsync(ffmpegPath, args, { windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
+      return await fs.promises.readFile(outputPath);
+    } finally {
+      await fs.promises.unlink(inputPath).catch(() => {});
+      await fs.promises.unlink(outputPath).catch(() => {});
+    }
+  }
+
+  async handleStickerCommand(chatId, message, content) {
+    if (!this.sock) return;
+
+    const target = this.resolveStickerMedia(content);
+    if (!target) {
+      await this.sock.sendMessage(
+        chatId,
+        { text: 'Usage: kirim/reply gambar, video, atau sticker lalu ketik !sticker' },
+        { quoted: message }
+      );
+      return;
+    }
+
+    try {
+      const stream = await downloadContentFromMessage(target.media, target.type);
+      const sourceBuffer = await this.streamToBuffer(stream);
+      const stickerBuffer = await this.convertToWebp(sourceBuffer, target.type);
+      await this.sock.sendMessage(chatId, { sticker: stickerBuffer }, { quoted: message });
+    } catch (error) {
+      console.error('[WA] !sticker error:', error.message);
+      await this.sock.sendMessage(chatId, { text: 'Gagal membuat sticker dari media tersebut.' }, { quoted: message });
+    }
   }
 
   async handleViewOnceCommand(chatId, content) {
