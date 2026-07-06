@@ -178,6 +178,9 @@ function matchCommand(text) {
 
 function createCommand(payload) {
   const { trigger, response, description, category, mediaUrl, mediaType, fileName, buttons } = payload;
+  const cleanResponse = String(response || '').trim();
+  const cleanMediaUrl = String(mediaUrl || '').trim();
+  const parsedButtons = normalizeButtons(buttons);
 
   const cleanTrigger = normalizeTrigger(trigger);
   if (!cleanTrigger) throw new Error('Trigger is required');
@@ -185,8 +188,12 @@ function createCommand(payload) {
     throw new Error('Trigger must start with ! (example: !hello)');
   }
 
-  if (!response && !mediaUrl) {
+  if (!cleanResponse && !cleanMediaUrl) {
     throw new Error('At least a response text or media URL is required');
+  }
+
+  if (!cleanResponse && cleanMediaUrl && parsedButtons) {
+    throw new Error('Response text is required when using media with buttons');
   }
 
   if (findCommand(cleanTrigger)) {
@@ -195,18 +202,18 @@ function createCommand(payload) {
 
   const entry = {
     trigger: cleanTrigger,
-    response: String(response || '').trim(),
+    response: cleanResponse,
     description: String(description || '').trim(),
     category: normalizeCategory(category),
     createdAt: new Date().toISOString(),
   };
 
-  if (mediaUrl && String(mediaUrl).trim()) {
+  if (cleanMediaUrl) {
     const type = String(mediaType || 'image').trim();
     if (!ALLOWED_MEDIA_TYPES.includes(type)) {
       throw new Error('Invalid media type');
     }
-    entry.mediaUrl = String(mediaUrl).trim();
+    entry.mediaUrl = cleanMediaUrl;
     entry.mediaType = type;
   }
 
@@ -214,7 +221,6 @@ function createCommand(payload) {
     entry.fileName = String(fileName).trim();
   }
 
-  const parsedButtons = normalizeButtons(buttons);
   if (parsedButtons) entry.buttons = parsedButtons;
 
   commands.push(entry);
@@ -228,21 +234,28 @@ function updateCommand(trigger, payload) {
   if (!target) throw new Error('Command not found');
 
   const { response, description, category, mediaUrl, mediaType, fileName, buttons } = payload;
+  const cleanResponse = String(response || '').trim();
+  const cleanMediaUrl = String(mediaUrl || '').trim();
+  const parsedButtons = normalizeButtons(buttons);
 
-  if (!response && !mediaUrl) {
+  if (!cleanResponse && !cleanMediaUrl) {
     throw new Error('At least a response text or media URL is required');
   }
 
-  target.response = String(response || '').trim();
+  if (!cleanResponse && cleanMediaUrl && parsedButtons) {
+    throw new Error('Response text is required when using media with buttons');
+  }
+
+  target.response = cleanResponse;
   target.description = String(description || '').trim();
   target.category = normalizeCategory(category);
 
-  if (mediaUrl && String(mediaUrl).trim()) {
+  if (cleanMediaUrl) {
     const type = String(mediaType || 'image').trim();
     if (!ALLOWED_MEDIA_TYPES.includes(type)) {
       throw new Error('Invalid media type');
     }
-    target.mediaUrl = String(mediaUrl).trim();
+    target.mediaUrl = cleanMediaUrl;
     target.mediaType = type;
   } else {
     delete target.mediaUrl;
@@ -255,7 +268,6 @@ function updateCommand(trigger, payload) {
     delete target.fileName;
   }
 
-  const parsedButtons = normalizeButtons(buttons);
   if (parsedButtons) target.buttons = parsedButtons;
   else delete target.buttons;
 

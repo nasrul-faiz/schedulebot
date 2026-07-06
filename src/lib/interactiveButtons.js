@@ -29,6 +29,9 @@ function getButtonDedupKey(button) {
   if (name === 'cta_call') {
     return `cta_call:${String(params.phone_number || '').trim()}:${String(params.display_text || '').trim()}`;
   }
+  if (name === 'cta_wa') {
+    return `cta_wa:${String(params.phone_number || '').trim()}:${String(params.display_text || '').trim()}`;
+  }
   if (name === 'cta_copy') {
     return `cta_copy:${String(params.copy_code || '').trim()}:${String(params.display_text || '').trim()}`;
   }
@@ -100,6 +103,8 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
   const nativeButtons = toNativeFlowButtons(payload?.buttons);
   const shouldStripQuotedFallback = isPersonalJid(jid) && Boolean(options?.quoted);
   const mediaField = buildMediaField(payload?.media);
+  const legacyButtons = toLegacyButtons(nativeButtons);
+  const buttonMessageText = bodyText || footerText || 'Choose an option:';
 
   if (!nativeButtons.length) {
     if (mediaField) {
@@ -110,7 +115,123 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
     return;
   }
 
+  // Compatibility-first path: media+buttons in one message is inconsistent across WA clients.
+  // We send media first, then response text together with button message to ensure both are delivered reliably.
+  if (mediaField) {
+    try {
+      await sock.sendMessage(jid, { ...mediaField }, options);
+    } catch (mediaError) {
+      if (!shouldStripQuotedFallback) throw mediaError;
+
+      await sock.sendMessage(jid, { ...mediaField });
+    }
+
+    try {
+      await sock.sendMessage(
+        jid,
+        {
+          text: buttonMessageText,
+          footer: footerText,
+          interactiveButtons: nativeButtons,
+          viewOnce: true,
+        },
+        options
+      );
+      return;
+    } catch (interactiveError) {
+      console.warn('[WA] media follow-up interactiveButtons failed:', interactiveError.message);
+
+      if (shouldStripQuotedFallback) {
+        try {
+          await sock.sendMessage(jid, {
+            text: buttonMessageText,
+            footer: footerText,
+            interactiveButtons: nativeButtons,
+            viewOnce: true,
+          });
+          return;
+        } catch (retryInteractiveError) {
+          console.warn('[WA] media follow-up interactiveButtons retry failed:', retryInteractiveError.message);
+        }
+      }
+    }
+
+    try {
+      const followUpMsg = generateWAMessageFromContent(
+        jid,
+        {
+          viewOnceMessage: {
+            message: {
+              messageContextInfo: {
+                deviceListMetadata: {},
+                deviceListMetadataVersion: 2,
+              },
+              interactiveMessage: proto.Message.InteractiveMessage.create({
+                body: proto.Message.InteractiveMessage.Body.create({ text: buttonMessageText }),
+                footer: proto.Message.InteractiveMessage.Footer.create({ text: footerText }),
+                header: proto.Message.InteractiveMessage.Header.create({ hasMediaAttachment: false }),
+                nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+                  buttons: nativeButtons,
+                }),
+              }),
+            },
+          },
+        },
+        {
+          userJid: sock?.user?.id,
+          quoted: options?.quoted,
+        }
+      );
+
+      await sock.relayMessage(jid, followUpMsg.message, { messageId: followUpMsg.key.id });
+      return;
+    } catch (relayError) {
+      console.warn('[WA] media follow-up nativeFlow relay failed:', relayError.message);
+    }
+
+    if (legacyButtons.length) {
+      try {
+        await sock.sendMessage(
+          jid,
+          {
+            text: buttonMessageText,
+            footer: footerText,
+            buttons: legacyButtons,
+            headerType: 1,
+            viewOnce: true,
+          },
+          options
+        );
+        return;
+      } catch (buttonError) {
+        if (!shouldStripQuotedFallback) throw buttonError;
+
+        await sock.sendMessage(jid, {
+          text: buttonMessageText,
+          footer: footerText,
+          buttons: legacyButtons,
+          headerType: 1,
+          viewOnce: true,
+        });
+        return;
+      }
+    }
+
+    // If legacy button format is unavailable, still send a text fallback.
+    await sock.sendMessage(jid, { text: buttonMessageText }, options);
+    return;
+  }
+
   const bodyKey = mediaField ? 'caption' : 'text';
+
+  async function sendFinalFallback() {
+    if (mediaField) {
+      await sock.sendMessage(jid, { ...mediaField, caption: bodyText || undefined }, options);
+      return;
+    }
+
+    await sock.sendMessage(jid, { text: bodyText || ' ' }, options);
+  }
 
   try {
     await sock.sendMessage(
@@ -145,29 +266,6 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
     }
   }
 
-  const legacyButtons = toLegacyButtons(nativeButtons);
-
-  if (mediaField && legacyButtons.length) {
-    // Media + buttons fallback: combine into a single legacy buttons message.
-    try {
-      await sock.sendMessage(
-        jid,
-        {
-          ...mediaField,
-          caption: bodyText || ' ',
-          footer: footerText,
-          buttons: legacyButtons,
-          headerType: 1,
-          viewOnce: true,
-        },
-        options
-      );
-      return;
-    } catch (legacyMediaError) {
-      console.warn('[WA] legacy media+buttons failed, falling back to text-only buttons:', legacyMediaError.message);
-    }
-  }
-
   try {
     const msg = generateWAMessageFromContent(
       jid,
@@ -196,9 +294,13 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
     );
 
     await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
+    return;
   } catch (error) {
     console.warn('[WA] nativeFlow relay failed, trying legacy buttons:', error.message);
-    if (!legacyButtons.length) throw error;
+    if (!legacyButtons.length) {
+      await sendFinalFallback();
+      return;
+    }
 
     try {
       await sock.sendMessage(
@@ -212,26 +314,43 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
         },
         options
       );
+      return;
     } catch (legacyError) {
-      if (!shouldStripQuotedFallback) throw legacyError;
+      if (shouldStripQuotedFallback) {
+        try {
+          await sock.sendMessage(jid, {
+            text: bodyText || ' ',
+            footer: footerText,
+            buttons: legacyButtons,
+            headerType: 1,
+            viewOnce: true,
+          });
+          return;
+        } catch (retryLegacyError) {
+          console.warn('[WA] legacy buttons retry without quoted failed:', retryLegacyError.message);
+        }
+      }
 
-      await sock.sendMessage(jid, {
-        text: bodyText || ' ',
-        footer: footerText,
-        buttons: legacyButtons,
-        headerType: 1,
-        viewOnce: true,
-      });
+      // Last fallback when mixed media+buttons payload cannot be composed by the WA client.
+      if (mediaField) {
+        await sock.sendMessage(jid, { ...mediaField, caption: bodyText || undefined }, options);
+        await sock.sendMessage(
+          jid,
+          {
+            text: footerText || 'Choose an option:',
+            buttons: legacyButtons,
+            headerType: 1,
+            viewOnce: true,
+          },
+          options
+        );
+        return;
+      }
+
+      await sendFinalFallback();
+      return;
     }
   }
-
-  // Final fail-safe: still deliver the content even if all button formats fail.
-  if (mediaField) {
-    await sock.sendMessage(jid, { ...mediaField, caption: bodyText || undefined }, options);
-    return;
-  }
-
-  await sock.sendMessage(jid, { text: bodyText || ' ' }, options);
 }
 
 module.exports = {

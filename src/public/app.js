@@ -747,6 +747,7 @@ const commandMediaSourceField = document.getElementById('commandMediaSourceField
 const commandMediaUrlField = document.getElementById('commandMediaUrlField');
 const commandMediaUploadField = document.getElementById('commandMediaUploadField');
 const commandFileNameField = document.getElementById('commandFileNameField');
+const commandResponseRuleHint = document.getElementById('commandResponseRuleHint');
 const commandOriginalTrigger = document.getElementById('commandOriginalTrigger');
 const commandSubmitBtn = document.getElementById('commandSubmitBtn');
 const commandCancelBtn = document.getElementById('commandCancelBtn');
@@ -780,6 +781,7 @@ function buttonRowTemplate(button = {}) {
       <option value="quick_reply">Quick Reply</option>
       <option value="cta_url">Open Link</option>
       <option value="cta_call">Call</option>
+      <option value="cta_wa">WhatsApp</option>
       <option value="cta_copy">Copy Code</option>
     </select>
     <input class="btn-label-input" placeholder="Button label" />
@@ -801,6 +803,8 @@ function buttonRowTemplate(button = {}) {
       valueInput.placeholder = 'https://example.com';
     } else if (typeSelect.value === 'cta_call') {
       valueInput.placeholder = '+60123456789';
+    } else if (typeSelect.value === 'cta_wa') {
+      valueInput.placeholder = '60123456789';
     } else if (typeSelect.value === 'cta_copy') {
       valueInput.placeholder = 'DISKAUN10';
     } else {
@@ -808,9 +812,17 @@ function buttonRowTemplate(button = {}) {
     }
   }
   syncPlaceholder();
-  typeSelect.addEventListener('change', syncPlaceholder);
+  typeSelect.addEventListener('change', () => {
+    syncPlaceholder();
+    updateCommandSubmitState();
+  });
 
-  removeBtn.addEventListener('click', () => row.remove());
+  labelInput.addEventListener('input', updateCommandSubmitState);
+  valueInput.addEventListener('input', updateCommandSubmitState);
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+    updateCommandSubmitState();
+  });
 
   return row;
 }
@@ -837,6 +849,7 @@ function collectButtonsFromRows() {
       let params = { display_text: label };
       if (type === 'cta_url') params.url = value;
       else if (type === 'cta_call') params.phone_number = value;
+      else if (type === 'cta_wa') params.phone_number = value;
       else if (type === 'cta_copy') params.copy_code = value;
       else params.id = value;
 
@@ -879,12 +892,21 @@ function updateCommandSubmitState() {
   const hasResponse = Boolean(String(commandResponseInput?.value || '').trim());
   const hasMediaUrl = Boolean(String(commandMediaUrlInput?.value || '').trim());
   const hasUploadFile = Boolean(commandMediaUploadInput?.files && commandMediaUploadInput.files.length);
+  const hasButtons = collectButtonsFromRows().length > 0;
   const hasMediaInput = isNoMedia
     ? false
     : mediaSource === 'upload'
       ? hasUploadFile || hasMediaUrl
       : hasMediaUrl;
-  const isReady = hasValidTrigger && hasMediaType && (hasResponse || hasMediaInput);
+  const requireResponseForMediaButtons = !isNoMedia && hasButtons;
+  const isReady = hasValidTrigger
+    && hasMediaType
+    && (hasResponse || hasMediaInput)
+    && (!requireResponseForMediaButtons || hasResponse);
+
+  if (commandResponseRuleHint) {
+    commandResponseRuleHint.hidden = !requireResponseForMediaButtons;
+  }
 
   commandSubmitBtn.disabled = !isReady;
   commandSubmitBtn.classList.toggle('is-ready', isReady);
@@ -1110,6 +1132,7 @@ document.querySelectorAll('.btn-edit-command').forEach((button) => {
 
 const commandPreviewModal = document.getElementById('commandPreviewModal');
 const closeCommandPreviewModalBtn = document.getElementById('closeCommandPreviewModal');
+const commandPreviewViewport = document.getElementById('commandPreviewViewport');
 const commandPreviewImage = document.getElementById('commandPreviewImage');
 const commandPreviewVideo = document.getElementById('commandPreviewVideo');
 const commandPreviewAudio = document.getElementById('commandPreviewAudio');
@@ -1119,6 +1142,8 @@ const commandPreviewBadge = document.getElementById('commandPreviewBadge');
 const commandPreviewTitle = document.getElementById('commandPreviewTitle');
 const commandPreviewDescription = document.getElementById('commandPreviewDescription');
 const commandPreviewContent = document.getElementById('commandPreviewContent');
+const commandPreviewMeta = document.getElementById('commandPreviewMeta');
+const commandPreviewDeliveryHint = document.getElementById('commandPreviewDeliveryHint');
 const commandPreviewButtons = document.getElementById('commandPreviewButtons');
 const commandPreviewActionBtn = document.getElementById('commandPreviewActionBtn');
 
@@ -1171,6 +1196,75 @@ function resetCommandPreviewMedia() {
   }
 }
 
+function truncatePreviewValue(value, maxLength = 42) {
+  const clean = String(value || '').trim();
+  if (!clean) return '';
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, maxLength - 1)}...`;
+}
+
+function getButtonKindLabel(kind) {
+  if (kind === 'cta_url') return 'Open Link';
+  if (kind === 'cta_call') return 'Call';
+  if (kind === 'cta_wa') return 'WhatsApp';
+  if (kind === 'cta_copy') return 'Copy Code';
+  return 'Quick Reply';
+}
+
+function renderCommandPreviewMeta(command) {
+  if (!commandPreviewMeta) return;
+
+  const mediaType = String(command.mediaType || '').trim();
+  const mediaUrl = String(command.mediaUrl || '').trim();
+  const hasMedia = Boolean(mediaType && mediaUrl);
+  const buttons = Array.isArray(command.buttons) ? command.buttons : [];
+  const buttonCount = buttons.length;
+  const category = String(command.category || '').trim() || 'General';
+
+  const chips = [
+    `Category: ${category}`,
+    hasMedia ? `Media: ${mediaType}` : 'Media: none',
+    buttonCount ? `Buttons: ${buttonCount}` : 'Buttons: none',
+    hasMedia && buttonCount ? 'Delivery: 2 messages' : 'Delivery: 1 message',
+  ];
+
+  commandPreviewMeta.innerHTML = '';
+  chips.forEach((text) => {
+    const chip = document.createElement('span');
+    chip.className = 'command-preview-meta-chip';
+    chip.textContent = text;
+    commandPreviewMeta.appendChild(chip);
+  });
+  commandPreviewMeta.hidden = false;
+}
+
+function renderCommandPreviewDeliveryHint(command) {
+  if (!commandPreviewDeliveryHint) return;
+
+  const mediaType = String(command.mediaType || '').trim();
+  const mediaUrl = String(command.mediaUrl || '').trim();
+  const hasMedia = Boolean(mediaType && mediaUrl);
+  const hasButtons = Array.isArray(command.buttons) && command.buttons.length > 0;
+  const hasResponse = Boolean(String(command.response || '').trim());
+
+  if (hasMedia && hasButtons) {
+    commandPreviewDeliveryHint.textContent = hasResponse
+      ? 'Preview note: media + caption will send first, then buttons in a second message for WhatsApp compatibility.'
+      : 'Warning: media + buttons without response text can cause unclear output. Add response text for better result.';
+    commandPreviewDeliveryHint.hidden = false;
+    return;
+  }
+
+  if (hasButtons && !hasMedia) {
+    commandPreviewDeliveryHint.textContent = 'Preview note: this command sends one text message with interactive buttons.';
+    commandPreviewDeliveryHint.hidden = false;
+    return;
+  }
+
+  commandPreviewDeliveryHint.textContent = '';
+  commandPreviewDeliveryHint.hidden = true;
+}
+
 function renderCommandPreviewButtons(command) {
   if (!commandPreviewButtons) return;
 
@@ -1186,13 +1280,28 @@ function renderCommandPreviewButtons(command) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn wa-preview-chip';
-    button.textContent = params.display_text || 'Button';
-
     const kind = String(buttonItem.name || '').trim();
+    const label = params.display_text || 'Button';
+    button.textContent = `${getButtonKindLabel(kind)}: ${label}`;
+
+    let metaValue = params.id || params.url || params.phone_number || params.copy_code || '';
+    if (metaValue) {
+      const valueSpan = document.createElement('span');
+      valueSpan.className = 'command-preview-button-value';
+      valueSpan.textContent = truncatePreviewValue(metaValue);
+      button.appendChild(valueSpan);
+    }
+
     if (kind === 'cta_url' && params.url) {
       button.addEventListener('click', () => window.open(params.url, '_blank', 'noopener'));
     } else if (kind === 'cta_call' && params.phone_number) {
       button.addEventListener('click', () => window.open(`tel:${params.phone_number}`, '_self'));
+    } else if (kind === 'cta_wa' && params.phone_number) {
+      const rawPhone = String(params.phone_number || '');
+      const normalizedPhone = rawPhone.replace(/[^0-9]/g, '');
+      if (normalizedPhone) {
+        button.addEventListener('click', () => window.open(`https://wa.me/${normalizedPhone}`, '_blank', 'noopener'));
+      }
     } else if (kind === 'cta_copy' && params.copy_code) {
       button.addEventListener('click', async () => {
         try {
@@ -1280,6 +1389,8 @@ function openCommandPreviewModal(command) {
     }
   }
 
+  renderCommandPreviewMeta(command);
+  renderCommandPreviewDeliveryHint(command);
   renderCommandPreviewButtons(command);
 
   if (commandPreviewActionBtn) {
