@@ -344,14 +344,14 @@ class WhatsAppService {
       const text = this.extractMessageText(content);
 
       if (text.trim() === '!vv') {
-        await this.handleViewOnceCommand(chatId, message, content);
+        await this.handleViewOnceCommand(chatId, content);
         continue;
       }
 
       const matched = customCommandStore.matchCommand(text);
       if (!matched) continue;
 
-      await this.replyWithCustomCommand(chatId, matched, message);
+      await this.replyWithCustomCommand(chatId, matched);
     }
   }
 
@@ -391,7 +391,7 @@ class WhatsAppService {
     return '';
   }
 
-  async handleViewOnceCommand(chatId, message, content) {
+  async handleViewOnceCommand(chatId, content) {
     const quoted = content?.extendedTextMessage?.contextInfo?.quotedMessage;
     const quotedImage = quoted?.imageMessage;
     const quotedVideo = quoted?.videoMessage;
@@ -403,8 +403,7 @@ class WhatsAppService {
         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
         await this.sock.sendMessage(
           chatId,
-          { image: buffer, fileName: 'media.jpg', caption: quotedImage.caption || '' },
-          { quoted: message }
+          { image: buffer, fileName: 'media.jpg', caption: quotedImage.caption || '' }
         );
       } else if (quotedVideo && quotedVideo.viewOnce) {
         const stream = await downloadContentFromMessage(quotedVideo, 'video');
@@ -412,23 +411,14 @@ class WhatsAppService {
         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
         await this.sock.sendMessage(
           chatId,
-          { video: buffer, fileName: 'media.mp4', caption: quotedVideo.caption || '' },
-          { quoted: message }
+          { video: buffer, fileName: 'media.mp4', caption: quotedVideo.caption || '' }
         );
       } else {
-        await this.sock.sendMessage(
-          chatId,
-          { text: 'Reply to a "view once" image/video message with !vv to reopen it.' },
-          { quoted: message }
-        );
+        await this.sock.sendMessage(chatId, { text: 'Reply to a "view once" image/video message with !vv to reopen it.' });
       }
     } catch (error) {
       console.error('[WA] Failed to process !vv command:', error.message);
-      await this.sock.sendMessage(
-        chatId,
-        { text: 'Failed to reopen that media.' },
-        { quoted: message }
-      );
+      await this.sock.sendMessage(chatId, { text: 'Failed to reopen that media.' });
     }
   }
 
@@ -538,9 +528,9 @@ class WhatsAppService {
     }
   }
 
-  async replyWithCustomCommand(chatId, command, quotedMessage) {
+  async replyWithCustomCommand(chatId, command) {
     const caption = String(command.response || '').replace(/\\n/g, '\n');
-    const options = { quoted: quotedMessage };
+    const options = {};
     const hasButtons = Boolean(command.buttons && command.buttons.length);
 
     if (command.mediaUrl && command.mediaType) {

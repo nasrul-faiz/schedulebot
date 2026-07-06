@@ -6,6 +6,68 @@ function isPersonalJid(jid) {
   return typeof jid === 'string' && jid.endsWith('@s.whatsapp.net');
 }
 
+function normalizePhone(value) {
+  return String(value || '').replace(/[^0-9]/g, '');
+}
+
+function normalizeButton(button) {
+  if (!button || typeof button !== 'object' || !button.name || !button.buttonParamsJson) return null;
+
+  const name = String(button.name || '').trim();
+  let params = {};
+
+  if (typeof button.buttonParamsJson === 'string') {
+    try {
+      params = JSON.parse(button.buttonParamsJson);
+    } catch (error) {
+      params = {};
+    }
+  } else if (typeof button.buttonParamsJson === 'object') {
+    params = button.buttonParamsJson || {};
+  }
+
+  const displayText = String(params.display_text || '').trim();
+
+  // `cta_wa` is transformed to `cta_url` so the button reliably opens a WA chat.
+  // This keeps behavior consistent even when interactive native payload falls back.
+  if (name === 'cta_wa') {
+    const phoneNumber = normalizePhone(params.phone_number || params.id || '');
+    if (!phoneNumber) return null;
+
+    const presetText = String(params.text || params.message || '').trim();
+    const waUrl = presetText
+      ? `https://wa.me/${phoneNumber}?text=${encodeURIComponent(presetText)}`
+      : `https://wa.me/${phoneNumber}`;
+
+    return {
+      name: 'cta_url',
+      buttonParamsJson: JSON.stringify({
+        display_text: displayText || 'WhatsApp',
+        url: waUrl,
+      }),
+    };
+  }
+
+  if (name === 'cta_call') {
+    const phoneNumber = normalizePhone(params.phone_number || '');
+    if (!phoneNumber) return null;
+
+    return {
+      name,
+      buttonParamsJson: JSON.stringify({
+        ...params,
+        display_text: displayText,
+        phone_number: phoneNumber,
+      }),
+    };
+  }
+
+  return {
+    name,
+    buttonParamsJson: JSON.stringify(params),
+  };
+}
+
 function getButtonDedupKey(button) {
   if (!button || typeof button !== 'object') return '';
 
@@ -46,15 +108,8 @@ function toNativeFlowButtons(buttons) {
   const seen = new Set();
 
   for (const button of buttons) {
-    if (!button || typeof button !== 'object' || !button.name || !button.buttonParamsJson) continue;
-
-    const normalized = {
-      name: String(button.name),
-      buttonParamsJson:
-        typeof button.buttonParamsJson === 'string'
-          ? button.buttonParamsJson
-          : JSON.stringify(button.buttonParamsJson),
-    };
+    const normalized = normalizeButton(button);
+    if (!normalized) continue;
 
     const key = getButtonDedupKey(normalized);
     if (!key || seen.has(key)) continue;
