@@ -29,6 +29,31 @@ const DEFAULT_COMMANDS = [
     category: 'Media',
     createdAt: new Date().toISOString(),
   },
+  {
+    trigger: '!menuedit',
+    response: 'Pilih satu pilihan di bawah. Lepas tekan button, mesej ini akan bertukar ikut pilihan anda.',
+    description: 'Demo quick reply yang mengedit mesej asal selepas ditekan',
+    category: 'Utility',
+    buttons: [
+      {
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({
+          id: 'show_profile',
+          display_text: 'Show profile',
+          edit_command_trigger: '!alive',
+        }),
+      },
+      {
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({
+          id: 'check_status',
+          display_text: 'Check status',
+          edit_command_trigger: '!vv',
+        }),
+      },
+    ],
+    createdAt: new Date().toISOString(),
+  },
 ];
 
 function loadCommands() {
@@ -59,17 +84,43 @@ function ensureDefaultCommands() {
     const key = normalizeTrigger(fallback.trigger);
     if (!key) continue;
 
-    const exists = commands.some((item) => item.trigger === key);
-    if (exists) continue;
+    const existing = commands.find((item) => item.trigger === key);
+    if (!existing) {
+      commands.push({
+        trigger: key,
+        response: String(fallback.response || '').trim(),
+        description: String(fallback.description || '').trim(),
+        category: normalizeCategory(fallback.category),
+        createdAt: fallback.createdAt || new Date().toISOString(),
+      });
+      changed = true;
+      continue;
+    }
 
-    commands.push({
-      trigger: key,
-      response: String(fallback.response || '').trim(),
-      description: String(fallback.description || '').trim(),
-      category: normalizeCategory(fallback.category),
-      createdAt: fallback.createdAt || new Date().toISOString(),
-    });
-    changed = true;
+    if (key === '!menuedit') {
+      const desiredButtons = JSON.stringify(fallback.buttons || []);
+      const currentButtons = JSON.stringify(existing.buttons || []);
+      const nextResponse = String(fallback.response || '').trim();
+      const nextDescription = String(fallback.description || '').trim();
+      const nextCategory = normalizeCategory(fallback.category);
+
+      if (existing.response !== nextResponse) {
+        existing.response = nextResponse;
+        changed = true;
+      }
+      if (existing.description !== nextDescription) {
+        existing.description = nextDescription;
+        changed = true;
+      }
+      if (existing.category !== nextCategory) {
+        existing.category = nextCategory;
+        changed = true;
+      }
+      if (currentButtons !== desiredButtons) {
+        existing.buttons = fallback.buttons || [];
+        changed = true;
+      }
+    }
   }
 
   if (changed) {
