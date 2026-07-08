@@ -10,21 +10,84 @@ function normalizePhone(value) {
   return String(value || '').replace(/[^0-9]/g, '');
 }
 
+function parseButtonParams(button) {
+  if (!button || typeof button !== 'object') return {};
+
+  if (typeof button.buttonParamsJson === 'string') {
+    try {
+      const parsed = JSON.parse(button.buttonParamsJson);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  if (typeof button.buttonParamsJson === 'object' && button.buttonParamsJson) {
+    return button.buttonParamsJson;
+  }
+
+  return {};
+}
+
+function normalizeSingleSelectSections(rawSections, fallbackTitle) {
+  const sections = Array.isArray(rawSections) ? rawSections : [];
+  const cleanedSections = [];
+
+  for (const section of sections) {
+    if (!section || typeof section !== 'object') continue;
+
+    const rows = Array.isArray(section.rows) ? section.rows : [];
+    const cleanedRows = rows
+      .map((row) => {
+        if (!row || typeof row !== 'object') return null;
+
+        const id = String(row.id || '').trim();
+        const title = String(row.title || row.display_text || '').trim();
+        const header = String(row.header || '').trim();
+        const description = String(row.description || '').trim();
+        if (!id || !title) return null;
+
+        const cleanedRow = { id, title };
+        if (header) cleanedRow.header = header;
+        if (description) cleanedRow.description = description;
+        return cleanedRow;
+      })
+      .filter(Boolean);
+
+    if (!cleanedRows.length) continue;
+
+    const sectionTitle = String(section.title || section.section_title || 'Options').trim() || 'Options';
+    const highlightLabel = String(section.highlight_label || '').trim();
+
+    const cleanedSection = {
+      title: sectionTitle,
+      rows: cleanedRows,
+    };
+    if (highlightLabel) {
+      cleanedSection.highlight_label = highlightLabel;
+    }
+
+    cleanedSections.push(cleanedSection);
+  }
+
+  if (cleanedSections.length) return cleanedSections;
+
+  const fallbackId = String(fallbackTitle || '').trim();
+  if (!fallbackId) return [];
+
+  return [
+    {
+      title: 'Options',
+      rows: [{ id: fallbackId, title: fallbackId }],
+    },
+  ];
+}
+
 function normalizeButton(button) {
   if (!button || typeof button !== 'object' || !button.name || !button.buttonParamsJson) return null;
 
   const name = String(button.name || '').trim();
-  let params = {};
-
-  if (typeof button.buttonParamsJson === 'string') {
-    try {
-      params = JSON.parse(button.buttonParamsJson);
-    } catch (error) {
-      params = {};
-    }
-  } else if (typeof button.buttonParamsJson === 'object') {
-    params = button.buttonParamsJson || {};
-  }
+  const params = parseButtonParams(button);
 
   const displayText = String(params.display_text || '').trim();
 
@@ -44,6 +107,22 @@ function normalizeButton(button) {
       buttonParamsJson: JSON.stringify({
         display_text: displayText || 'WhatsApp',
         url: waUrl,
+        merchant_url: waUrl,
+      }),
+    };
+  }
+
+  if (name === 'cta_url') {
+    const url = String(params.url || '').trim();
+    if (!url) return null;
+
+    return {
+      name,
+      buttonParamsJson: JSON.stringify({
+        ...params,
+        display_text: displayText || String(params.title || 'Open link').trim() || 'Open link',
+        url,
+        merchant_url: String(params.merchant_url || url).trim() || url,
       }),
     };
   }
@@ -62,6 +141,20 @@ function normalizeButton(button) {
     };
   }
 
+  if (name === 'single_select') {
+    const title = String(params.title || params.display_text || 'Choose option').trim() || 'Choose option';
+    const sections = normalizeSingleSelectSections(params.sections, String(params.id || '').trim() || title);
+    if (!sections.length) return null;
+
+    return {
+      name,
+      buttonParamsJson: JSON.stringify({
+        title,
+        sections,
+      }),
+    };
+  }
+
   return {
     name,
     buttonParamsJson: JSON.stringify(params),
@@ -72,15 +165,7 @@ function getButtonDedupKey(button) {
   if (!button || typeof button !== 'object') return '';
 
   const name = String(button.name || '').trim();
-  let params = {};
-
-  if (typeof button.buttonParamsJson === 'string') {
-    try {
-      params = JSON.parse(button.buttonParamsJson);
-    } catch (error) {
-      params = {};
-    }
-  }
+  const params = parseButtonParams(button);
 
   if (name === 'quick_reply') {
     return `quick_reply:${String(params.id || '').trim()}:${String(params.display_text || '').trim()}`;
@@ -96,6 +181,9 @@ function getButtonDedupKey(button) {
   }
   if (name === 'cta_copy') {
     return `cta_copy:${String(params.copy_code || '').trim()}:${String(params.display_text || '').trim()}`;
+  }
+  if (name === 'single_select') {
+    return `single_select:${String(params.title || '').trim()}:${JSON.stringify(params.sections || [])}`;
   }
 
   return `${name}:${JSON.stringify(params)}`;
@@ -126,8 +214,21 @@ function toLegacyButtons(nativeButtons) {
     .map((button, index) => {
       try {
         const params = JSON.parse(button.buttonParamsJson || '{}');
-        const displayText = params.display_text || `Button ${index + 1}`;
-        const buttonId = params.id || params.url || params.phone_number || params.copy_code || displayText;
+        const kind = String(button.name || '').trim();
+        let displayText = params.display_text || `Button ${index + 1}`;
+        let buttonId = params.id || params.url || params.phone_number || params.copy_code || displayText;
+
+        if (kind === 'single_select') {
+          const firstRow = Array.isArray(params.sections)
+            ? params.sections
+              .flatMap((section) => (Array.isArray(section?.rows) ? section.rows : []))
+              .find((row) => row && typeof row === 'object' && (row.id || row.title))
+            : null;
+
+          displayText = params.title || params.display_text || firstRow?.title || displayText;
+          buttonId = firstRow?.id || firstRow?.title || displayText;
+        }
+
         return { buttonId: String(buttonId), buttonText: { displayText }, type: 1 };
       } catch (error) {
         return null;
@@ -161,6 +262,36 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
   const legacyButtons = toLegacyButtons(nativeButtons);
   const buttonMessageText = bodyText || footerText || 'Choose an option:';
 
+  async function relayNativeFlow(text, footer) {
+    const msg = generateWAMessageFromContent(
+      jid,
+      {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: {
+              deviceListMetadata: {},
+              deviceListMetadataVersion: 2,
+            },
+            interactiveMessage: proto.Message.InteractiveMessage.create({
+              body: proto.Message.InteractiveMessage.Body.create({ text: text || ' ' }),
+              footer: proto.Message.InteractiveMessage.Footer.create({ text: footer || '' }),
+              header: proto.Message.InteractiveMessage.Header.create({ hasMediaAttachment: false }),
+              nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+                buttons: nativeButtons,
+              }),
+            }),
+          },
+        },
+      },
+      {
+        userJid: sock?.user?.id,
+        quoted: options?.quoted,
+      }
+    );
+
+    await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
+  }
+
   if (!nativeButtons.length) {
     if (mediaField) {
       await sock.sendMessage(jid, { ...mediaField, caption: bodyText || undefined }, options);
@@ -182,13 +313,19 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
     }
 
     try {
+      await relayNativeFlow(buttonMessageText, footerText);
+      return;
+    } catch (nativeFlowError) {
+      console.warn('[WA] media follow-up nativeFlow relay failed:', nativeFlowError.message);
+    }
+
+    try {
       await sock.sendMessage(
         jid,
         {
           text: buttonMessageText,
           footer: footerText,
           interactiveButtons: nativeButtons,
-          viewOnce: true,
         },
         options
       );
@@ -202,46 +339,12 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
             text: buttonMessageText,
             footer: footerText,
             interactiveButtons: nativeButtons,
-            viewOnce: true,
           });
           return;
         } catch (retryInteractiveError) {
           console.warn('[WA] media follow-up interactiveButtons retry failed:', retryInteractiveError.message);
         }
       }
-    }
-
-    try {
-      const followUpMsg = generateWAMessageFromContent(
-        jid,
-        {
-          viewOnceMessage: {
-            message: {
-              messageContextInfo: {
-                deviceListMetadata: {},
-                deviceListMetadataVersion: 2,
-              },
-              interactiveMessage: proto.Message.InteractiveMessage.create({
-                body: proto.Message.InteractiveMessage.Body.create({ text: buttonMessageText }),
-                footer: proto.Message.InteractiveMessage.Footer.create({ text: footerText }),
-                header: proto.Message.InteractiveMessage.Header.create({ hasMediaAttachment: false }),
-                nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-                  buttons: nativeButtons,
-                }),
-              }),
-            },
-          },
-        },
-        {
-          userJid: sock?.user?.id,
-          quoted: options?.quoted,
-        }
-      );
-
-      await sock.relayMessage(jid, followUpMsg.message, { messageId: followUpMsg.key.id });
-      return;
-    } catch (relayError) {
-      console.warn('[WA] media follow-up nativeFlow relay failed:', relayError.message);
     }
 
     if (legacyButtons.length) {
@@ -253,7 +356,6 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
             footer: footerText,
             buttons: legacyButtons,
             headerType: 1,
-            viewOnce: true,
           },
           options
         );
@@ -266,7 +368,6 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
           footer: footerText,
           buttons: legacyButtons,
           headerType: 1,
-          viewOnce: true,
         });
         return;
       }
@@ -289,6 +390,13 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
   }
 
   try {
+    await relayNativeFlow(bodyText || ' ', footerText);
+    return;
+  } catch (nativeFlowError) {
+    console.warn('[WA] nativeFlow relay failed, trying interactiveButtons:', nativeFlowError.message);
+  }
+
+  try {
     await sock.sendMessage(
       jid,
       {
@@ -296,14 +404,13 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
         [bodyKey]: bodyText || ' ',
         footer: footerText,
         interactiveButtons: nativeButtons,
-        viewOnce: true,
       },
       options
     );
     return;
   } catch (error) {
     // Fallback for Baileys variants that do not support interactiveButtons in sendMessage.
-    console.warn('[WA] interactiveButtons via sendMessage failed:', error.message);
+    console.warn('[WA] interactiveButtons via sendMessage failed, trying legacy buttons:', error.message);
 
     if (shouldStripQuotedFallback) {
       try {
@@ -312,46 +419,13 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
           [bodyKey]: bodyText || ' ',
           footer: footerText,
           interactiveButtons: nativeButtons,
-          viewOnce: true,
         });
         return;
       } catch (retryError) {
         console.warn('[WA] interactiveButtons retry without quoted failed:', retryError.message);
       }
     }
-  }
 
-  try {
-    const msg = generateWAMessageFromContent(
-      jid,
-      {
-        viewOnceMessage: {
-          message: {
-            messageContextInfo: {
-              deviceListMetadata: {},
-              deviceListMetadataVersion: 2,
-            },
-            interactiveMessage: proto.Message.InteractiveMessage.create({
-              body: proto.Message.InteractiveMessage.Body.create({ text: bodyText || ' ' }),
-              footer: proto.Message.InteractiveMessage.Footer.create({ text: footerText }),
-              header: proto.Message.InteractiveMessage.Header.create({ hasMediaAttachment: false }),
-              nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
-                buttons: nativeButtons,
-              }),
-            }),
-          },
-        },
-      },
-      {
-        userJid: sock?.user?.id,
-        quoted: options?.quoted,
-      }
-    );
-
-    await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
-    return;
-  } catch (error) {
-    console.warn('[WA] nativeFlow relay failed, trying legacy buttons:', error.message);
     if (!legacyButtons.length) {
       await sendFinalFallback();
       return;
@@ -365,7 +439,6 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
           footer: footerText,
           buttons: legacyButtons,
           headerType: 1,
-          viewOnce: true,
         },
         options
       );
@@ -378,7 +451,6 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
             footer: footerText,
             buttons: legacyButtons,
             headerType: 1,
-            viewOnce: true,
           });
           return;
         } catch (retryLegacyError) {
@@ -395,7 +467,6 @@ async function sendInteractiveButtons(sock, jid, payload, options = {}) {
             text: footerText || 'Choose an option:',
             buttons: legacyButtons,
             headerType: 1,
-            viewOnce: true,
           },
           options
         );

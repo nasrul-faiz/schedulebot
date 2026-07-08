@@ -6,49 +6,114 @@ const DATA_FILE = path.join(DATA_DIR, 'custom-commands.json');
 
 const ALLOWED_CATEGORIES = ['General', 'Greeting', 'Info', 'Utility', 'Fun', 'Media', 'Other'];
 const ALLOWED_MEDIA_TYPES = ['image', 'video', 'audio', 'document'];
-const DISABLED_TRIGGERS = new Set(['!ytmp3', '!ytmp4', '!facebook', '!instagram', '!fb', '!ig']);
+const DISABLED_TRIGGERS = new Set(['.ytmp3', '.ytmp4', '.facebook', '.instagram', '.fb', '.ig', '!ytmp3', '!ytmp4', '!facebook', '!instagram', '!fb', '!ig']);
+const REMOVED_DEFAULT_TRIGGERS = new Set(['.menuedit', '.editreply', '!menuedit', '!editreply']);
 const DEFAULT_COMMANDS = [
   {
-    trigger: '!alive',
+    trigger: '.alive',
     response: '✅ Bot is alive and running.',
     description: 'Check bot online status quickly',
     category: 'Utility',
     createdAt: new Date().toISOString(),
   },
   {
-    trigger: '!vv',
-    response: 'Reply to a view-once image/video message with !vv to reopen the media.',
+    trigger: '.vv',
+    response: 'Reply to a view-once image/video message with .vv to reopen the media.',
     description: 'Open quoted view-once media',
     category: 'Utility',
     createdAt: new Date().toISOString(),
   },
   {
-    trigger: '!sticker',
-    response: '🧩 Buat sticker. Usage: reply/kirim gambar/video lalu ketik !sticker',
+    trigger: '.sticker',
+    response: '🧩 Buat sticker. Usage: reply/kirim gambar/video lalu ketik .sticker',
     description: 'Create sticker from image/video',
     category: 'Media',
     createdAt: new Date().toISOString(),
   },
   {
-    trigger: '!menuedit',
-    response: 'Pilih satu pilihan di bawah. Lepas tekan button, mesej ini akan bertukar ikut pilihan anda.',
-    description: 'Demo quick reply yang mengedit mesej asal selepas ditekan',
+    trigger: '.menu1',
+    response: 'Contoh quick reply 1 button. Tekan button di bawah.',
+    description: 'Demo quick reply 1 button',
     category: 'Utility',
     buttons: [
       {
         name: 'quick_reply',
         buttonParamsJson: JSON.stringify({
-          id: 'show_profile',
-          display_text: 'Show profile',
-          edit_command_trigger: '!alive',
+          id: 'alive',
+          display_text: 'Check bot',
         }),
       },
+    ],
+    createdAt: new Date().toISOString(),
+  },
+  {
+    trigger: '.menucombo',
+    response: 'Demo gabungan quick reply + single select. Cuba tekan salah satu pilihan di bawah.',
+    description: 'Demo quick reply dan single select dalam satu command',
+    category: 'Utility',
+    buttons: [
       {
         name: 'quick_reply',
         buttonParamsJson: JSON.stringify({
-          id: 'check_status',
-          display_text: 'Check status',
-          edit_command_trigger: '!vv',
+          id: '.alive',
+          display_text: 'Quick: Alive',
+        }),
+      },
+      {
+        name: 'single_select',
+        buttonParamsJson: JSON.stringify({
+          title: 'Single Select Menu',
+          sections: [
+            {
+              title: 'Pilihan',
+              rows: [
+                {
+                  id: '.vv',
+                  title: 'Single: View Once',
+                  description: 'Trigger .vv',
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    ],
+    createdAt: new Date().toISOString(),
+  },
+  {
+    trigger: '.demobutton',
+    response: 'Demo button interaktif: Quick Reply + Single Select. Pilih mana-mana pilihan di bawah.',
+    description: 'Demo rasmi quick reply dan single select',
+    category: 'Utility',
+    buttons: [
+      {
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({
+          id: '.alive',
+          display_text: 'Quick Reply: Alive',
+        }),
+      },
+      {
+        name: 'single_select',
+        buttonParamsJson: JSON.stringify({
+          title: 'Single Select Menu',
+          sections: [
+            {
+              title: 'Demo Options',
+              rows: [
+                {
+                  id: '.menu1',
+                  title: 'Row 1: Menu Quick Reply',
+                  description: 'Trigger .menu1',
+                },
+                {
+                  id: '.alive',
+                  title: 'Row 2: Alive',
+                  description: 'Trigger .alive',
+                },
+              ],
+            },
+          ],
         }),
       },
     ],
@@ -86,18 +151,24 @@ function ensureDefaultCommands() {
 
     const existing = commands.find((item) => item.trigger === key);
     if (!existing) {
-      commands.push({
+      const entry = {
         trigger: key,
         response: String(fallback.response || '').trim(),
         description: String(fallback.description || '').trim(),
         category: normalizeCategory(fallback.category),
         createdAt: fallback.createdAt || new Date().toISOString(),
-      });
+      };
+
+      if (Array.isArray(fallback.buttons) && fallback.buttons.length) {
+        entry.buttons = fallback.buttons;
+      }
+
+      commands.push(entry);
       changed = true;
       continue;
     }
 
-    if (key === '!menuedit') {
+    if (key === '.menucombo' || key === '.demobutton') {
       const desiredButtons = JSON.stringify(fallback.buttons || []);
       const currentButtons = JSON.stringify(existing.buttons || []);
       const nextResponse = String(fallback.response || '').trim();
@@ -130,6 +201,7 @@ function ensureDefaultCommands() {
 
 ensureDefaultCommands();
 migrateLegacyTriggers();
+purgeRemovedDefaultCommands();
 purgeDisabledCommands();
 
 function normalizeCategory(value) {
@@ -145,9 +217,9 @@ function normalizeTrigger(value) {
 function normalizeStoredTrigger(value) {
   const key = normalizeTrigger(value);
   if (!key) return '';
-  if (key.startsWith('!')) return key;
-  if (key.startsWith('.')) return `!${key.slice(1)}`;
-  return `!${key.replace(/^[^a-z0-9]+/, '')}`;
+  if (key.startsWith('.')) return key;
+  if (key.startsWith('!')) return `.${key.slice(1)}`;
+  return `.${key.replace(/^[^a-z0-9]+/, '')}`;
 }
 
 function migrateLegacyTriggers() {
@@ -187,6 +259,15 @@ function migrateLegacyTriggers() {
 
 function purgeDisabledCommands() {
   const kept = commands.filter((item) => !DISABLED_TRIGGERS.has(normalizeTrigger(item?.trigger)));
+  if (kept.length === commands.length) return;
+
+  commands.length = 0;
+  commands.push(...kept);
+  persistCommands();
+}
+
+function purgeRemovedDefaultCommands() {
+  const kept = commands.filter((item) => !REMOVED_DEFAULT_TRIGGERS.has(normalizeTrigger(item?.trigger)));
   if (kept.length === commands.length) return;
 
   commands.length = 0;
@@ -253,8 +334,8 @@ function createCommand(payload) {
 
   const cleanTrigger = normalizeTrigger(trigger);
   if (!cleanTrigger) throw new Error('Trigger is required');
-  if (!cleanTrigger.startsWith('!')) {
-    throw new Error('Trigger must start with ! (example: !hello)');
+  if (!cleanTrigger.startsWith('.')) {
+    throw new Error('Trigger must start with . (example: .hello)');
   }
   if (DISABLED_TRIGGERS.has(cleanTrigger)) {
     throw new Error(`Command ${cleanTrigger} is disabled`);

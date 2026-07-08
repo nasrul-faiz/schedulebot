@@ -394,8 +394,8 @@
                     <input type="hidden" id="commandOriginalTrigger" value="" />
                     <div class="field">
                       <label for="commandTrigger">Trigger</label>
-                      <input id="commandTrigger" name="trigger" placeholder="!hello" required />
-                      <p class="hint">Auto adds ! at the front, example: !hello</p>
+                      <input id="commandTrigger" name="trigger" placeholder=".hello" required />
+                      <p class="hint">Auto adds . at the front, example: .hello</p>
                     </div>
 
                     <div class="field">
@@ -447,7 +447,7 @@
                           <button type="button" class="btn btn-outline btn-sm" id="addButtonRowBtn">Add Button</button>
                         </div>
                         <div id="buttonRows" class="button-rows"></div>
-                        <p class="hint">Supports quick reply, open link, call, WhatsApp, and copy code buttons.</p>
+                        <p class="hint">Supports all official atexovi-baileys buttons: quick reply, open link, call, copy code, and single select (single-select value also accepts JSON rows).</p>
                       </div>
 
                       <div class="field-row optional-meta-row" id="commandOptionalMetaRow">

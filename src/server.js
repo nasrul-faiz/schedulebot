@@ -4,6 +4,55 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 
+function setupNoisyLogFilter() {
+  if (process.env.WA_FILTER_NOISY_LOGS === '0') return;
+
+  const suppressedPatterns = [
+    /pendingPreKey/i,
+    /SessionEntry/i,
+    /Closing stale open session for new outgoing prekey bundle/i,
+    /Closing open session in favor of incoming prekey bundle/i,
+    /Failed to decrypt message with any known session/i,
+    /Bad MAC/i,
+  ];
+
+  const shouldSuppress = (args) => {
+    const merged = args
+      .map((value) => {
+        if (typeof value === 'string') return value;
+        try {
+          return JSON.stringify(value);
+        } catch (error) {
+          return String(value);
+        }
+      })
+      .join(' ');
+
+    return suppressedPatterns.some((pattern) => pattern.test(merged));
+  };
+
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+
+  console.log = (...args) => {
+    if (shouldSuppress(args)) return;
+    originalLog(...args);
+  };
+
+  console.warn = (...args) => {
+    if (shouldSuppress(args)) return;
+    originalWarn(...args);
+  };
+
+  console.error = (...args) => {
+    if (shouldSuppress(args)) return;
+    originalError(...args);
+  };
+}
+
+setupNoisyLogFilter();
+
 const whatsappService = require('./services/whatsappService');
 const SchedulerService = require('./services/schedulerService');
 const scheduleStore = require('./services/scheduleStore');
@@ -15,6 +64,12 @@ const lockFilePath = path.join(process.cwd(), '.schedulebot.lock');
 const uploadDir = path.join(process.cwd(), 'uploads');
 
 function setupSingleInstanceLock() {
+  // Nodemon restarts quickly and can overlap old/new child process briefly.
+  // Skipping lock in nodemon mode avoids false "another instance" crashes during dev.
+  if (process.env.NODEMON === 'true') {
+    return;
+  }
+
   let existingPid = null;
 
   try {

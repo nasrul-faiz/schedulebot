@@ -47,6 +47,8 @@ Bot WhatsApp untuk menjadwalkan pengiriman pesan melalui web dashboard.
 
 	Untuk nombor personal, anda boleh set `DEFAULT_DIAL_CODE=60` supaya nombor lokal seperti `017xxxxxxx` akan ditukar automatik kepada format antarabangsa.
 
+	Untuk debug masalah button/quick reply, set `WA_DEBUG_INTERACTIVE=1` supaya log payload interaktif dipaparkan di terminal.
+
 3. Jalankan mode development:
 
 	```bash

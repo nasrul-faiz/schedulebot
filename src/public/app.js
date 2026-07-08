@@ -1247,6 +1247,15 @@ function buttonRowTemplate(button = {}) {
   }
 
   const name = button.name || 'quick_reply';
+  const singleSelectSections = Array.isArray(params.sections)
+    ? params.sections.filter((section) => section && typeof section === 'object')
+    : [];
+  const firstSingleSelectSection = singleSelectSections[0] || null;
+  const firstSingleSelectRow = Array.isArray(params.sections)
+    ? params.sections
+      .flatMap((section) => (Array.isArray(section?.rows) ? section.rows : []))
+      .find((item) => item && typeof item === 'object' && (item.id || item.title))
+    : null;
 
   row.innerHTML = `
     <select class="btn-type-select">
@@ -1255,32 +1264,153 @@ function buttonRowTemplate(button = {}) {
       <option value="cta_call">Call</option>
       <option value="cta_wa">WhatsApp</option>
       <option value="cta_copy">Copy Code</option>
+      <option value="single_select">Single Select</option>
     </select>
     <input class="btn-label-input" placeholder="Button label" />
     <input class="btn-value-input" placeholder="Value (id / URL / phone)" />
     <button type="button" class="btn btn-ghost btn-sm btn-remove-row" aria-label="Remove button">&times;</button>
+    <div class="single-select-editor" hidden>
+      <div class="single-select-editor-head">
+        <input class="single-select-section-title" placeholder="Section title (default: Options)" />
+        <input class="single-select-highlight-label" placeholder="Highlight label (optional)" />
+        <button type="button" class="btn btn-outline btn-sm btn-add-single-row">Add Row</button>
+      </div>
+      <div class="single-select-rows-editor"></div>
+    </div>
   `;
 
   const typeSelect = row.querySelector('.btn-type-select');
   const labelInput = row.querySelector('.btn-label-input');
   const valueInput = row.querySelector('.btn-value-input');
   const removeBtn = row.querySelector('.btn-remove-row');
+  const singleSelectEditor = row.querySelector('.single-select-editor');
+  const singleSelectSectionTitleInput = row.querySelector('.single-select-section-title');
+  const singleSelectHighlightLabelInput = row.querySelector('.single-select-highlight-label');
+  const singleSelectRowsEditor = row.querySelector('.single-select-rows-editor');
+  const addSingleRowBtn = row.querySelector('.btn-add-single-row');
+
+  function setSingleSelectEditorVisible(isVisible) {
+    const visible = Boolean(isVisible);
+    if (singleSelectEditor) {
+      singleSelectEditor.hidden = !visible;
+      singleSelectEditor.setAttribute('aria-hidden', String(!visible));
+    }
+    row.classList.toggle('is-single-select', visible);
+  }
+
+  function buildSingleSelectRowEditor(rowData = {}) {
+    const rowEditor = document.createElement('div');
+    rowEditor.className = 'single-select-row-editor';
+    rowEditor.innerHTML = `
+      <input class="single-select-row-title" placeholder="Row title" />
+      <input class="single-select-row-id" placeholder="Row id" />
+      <input class="single-select-row-header" placeholder="Header (optional)" />
+      <input class="single-select-row-description" placeholder="Description (optional)" />
+      <button type="button" class="btn btn-ghost btn-sm btn-remove-single-row" aria-label="Remove single select row">&times;</button>
+    `;
+
+    const rowTitleInput = rowEditor.querySelector('.single-select-row-title');
+    const rowIdInput = rowEditor.querySelector('.single-select-row-id');
+    const rowHeaderInput = rowEditor.querySelector('.single-select-row-header');
+    const rowDescriptionInput = rowEditor.querySelector('.single-select-row-description');
+    const removeSingleRowBtn = rowEditor.querySelector('.btn-remove-single-row');
+
+    rowTitleInput.value = String(rowData.title || '').trim();
+    rowIdInput.value = String(rowData.id || '').trim();
+    rowHeaderInput.value = String(rowData.header || '').trim();
+    rowDescriptionInput.value = String(rowData.description || '').trim();
+
+    rowTitleInput.addEventListener('input', updateCommandSubmitState);
+    rowIdInput.addEventListener('input', updateCommandSubmitState);
+    rowHeaderInput.addEventListener('input', updateCommandSubmitState);
+    rowDescriptionInput.addEventListener('input', updateCommandSubmitState);
+    removeSingleRowBtn.addEventListener('click', () => {
+      rowEditor.remove();
+      updateCommandSubmitState();
+    });
+
+    return rowEditor;
+  }
+
+  function getExistingSingleSelectRows() {
+    if (!singleSelectSections.length) return [];
+
+    return singleSelectSections
+      .flatMap((section) => (Array.isArray(section.rows) ? section.rows : []))
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const id = String(item.id || '').trim();
+        const title = String(item.title || '').trim();
+        if (!id || !title) return null;
+
+        const header = String(item.header || '').trim();
+        const description = String(item.description || '').trim();
+        const rowData = { id, title };
+        if (header) rowData.header = header;
+        if (description) rowData.description = description;
+        return rowData;
+      })
+      .filter(Boolean);
+  }
+
+  function ensureSingleSelectEditorRows() {
+    if (!singleSelectRowsEditor) return;
+
+    const existingRows = Array.from(singleSelectRowsEditor.querySelectorAll('.single-select-row-editor'));
+    if (existingRows.length) return;
+
+    const rowData = firstSingleSelectRow
+      ? {
+        id: String(firstSingleSelectRow.id || '').trim(),
+        title: String(firstSingleSelectRow.title || '').trim(),
+        header: String(firstSingleSelectRow.header || '').trim(),
+        description: String(firstSingleSelectRow.description || '').trim(),
+      }
+      : {
+        id: String(valueInput.value || '').trim(),
+        title: String(labelInput.value || '').trim(),
+      };
+
+    singleSelectRowsEditor.appendChild(buildSingleSelectRowEditor(rowData));
+  }
 
   typeSelect.value = name;
-  labelInput.value = params.display_text || '';
-  valueInput.value = params.id || params.url || params.phone_number || params.copy_code || '';
+  labelInput.value = params.display_text || params.title || firstSingleSelectRow?.title || '';
+  valueInput.value = params.id || params.url || params.phone_number || params.copy_code || firstSingleSelectRow?.id || '';
+  singleSelectSectionTitleInput.value = String(firstSingleSelectSection?.title || 'Options').trim() || 'Options';
+  singleSelectHighlightLabelInput.value = String(firstSingleSelectSection?.highlight_label || '').trim();
+
+  const existingRows = getExistingSingleSelectRows();
+  existingRows.forEach((rowData) => {
+    singleSelectRowsEditor.appendChild(buildSingleSelectRowEditor(rowData));
+  });
 
   function syncPlaceholder() {
     if (typeSelect.value === 'cta_url') {
       valueInput.placeholder = 'https://example.com';
+      valueInput.hidden = false;
+      setSingleSelectEditorVisible(false);
     } else if (typeSelect.value === 'cta_call') {
       valueInput.placeholder = '+60123456789';
+      valueInput.hidden = false;
+      setSingleSelectEditorVisible(false);
     } else if (typeSelect.value === 'cta_wa') {
       valueInput.placeholder = '60123456789';
+      valueInput.hidden = false;
+      setSingleSelectEditorVisible(false);
     } else if (typeSelect.value === 'cta_copy') {
       valueInput.placeholder = 'DISKAUN10';
+      valueInput.hidden = false;
+      setSingleSelectEditorVisible(false);
+    } else if (typeSelect.value === 'single_select') {
+      valueInput.placeholder = 'row_id atau JSON rows (contoh: [{"id":"id1","title":"Option 1"}])';
+      valueInput.hidden = true;
+      setSingleSelectEditorVisible(true);
+      ensureSingleSelectEditorRows();
     } else {
       valueInput.placeholder = 'reply_id';
+      valueInput.hidden = false;
+      setSingleSelectEditorVisible(false);
     }
   }
   syncPlaceholder();
@@ -1291,6 +1421,13 @@ function buttonRowTemplate(button = {}) {
 
   labelInput.addEventListener('input', updateCommandSubmitState);
   valueInput.addEventListener('input', updateCommandSubmitState);
+  singleSelectSectionTitleInput.addEventListener('input', updateCommandSubmitState);
+  singleSelectHighlightLabelInput.addEventListener('input', updateCommandSubmitState);
+  addSingleRowBtn.addEventListener('click', () => {
+    if (!singleSelectRowsEditor) return;
+    singleSelectRowsEditor.appendChild(buildSingleSelectRowEditor());
+    updateCommandSubmitState();
+  });
   removeBtn.addEventListener('click', () => {
     row.remove();
     updateCommandSubmitState();
@@ -1308,6 +1445,39 @@ function clearButtonRows() {
   if (buttonRows) buttonRows.innerHTML = '';
 }
 
+function parseSingleSelectRowsInput(rawValue, fallbackTitle) {
+  const cleanValue = String(rawValue || '').trim();
+  const cleanTitle = String(fallbackTitle || '').trim() || 'Option';
+  if (!cleanValue) return [];
+
+  if (cleanValue.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(cleanValue);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null;
+            const id = String(item.id || '').trim();
+            const title = String(item.title || '').trim();
+            const description = String(item.description || '').trim();
+            const header = String(item.header || '').trim();
+            if (!id || !title) return null;
+
+            const row = { id, title };
+            if (description) row.description = description;
+            if (header) row.header = header;
+            return row;
+          })
+          .filter(Boolean);
+      }
+    } catch (error) {
+      // Fall back to single row input format when JSON is invalid.
+    }
+  }
+
+  return [{ id: cleanValue, title: cleanTitle }];
+}
+
 function collectButtonsFromRows() {
   if (!buttonRows) return [];
 
@@ -1316,14 +1486,59 @@ function collectButtonsFromRows() {
       const type = row.querySelector('.btn-type-select').value;
       const label = row.querySelector('.btn-label-input').value.trim();
       const value = row.querySelector('.btn-value-input').value.trim();
-      if (!label || !value) return null;
+      const singleSelectSectionTitleInput = row.querySelector('.single-select-section-title');
+      const singleSelectHighlightLabelInput = row.querySelector('.single-select-highlight-label');
+      const singleSelectRows = Array.from(row.querySelectorAll('.single-select-row-editor'));
+      if (!label) return null;
+      if (type !== 'single_select' && !value) return null;
 
       let params = { display_text: label };
-      if (type === 'cta_url') params.url = value;
+      if (type === 'cta_url') {
+        params.url = value;
+        params.merchant_url = value;
+      }
       else if (type === 'cta_call') params.phone_number = value;
       else if (type === 'cta_wa') params.phone_number = value;
       else if (type === 'cta_copy') params.copy_code = value;
-      else params.id = value;
+      else if (type === 'single_select') {
+        let rows = singleSelectRows
+          .map((item) => {
+            const title = String(item.querySelector('.single-select-row-title')?.value || '').trim();
+            const id = String(item.querySelector('.single-select-row-id')?.value || '').trim();
+            const header = String(item.querySelector('.single-select-row-header')?.value || '').trim();
+            const description = String(item.querySelector('.single-select-row-description')?.value || '').trim();
+            if (!id || !title) return null;
+
+            const rowData = { id, title };
+            if (header) rowData.header = header;
+            if (description) rowData.description = description;
+            return rowData;
+          })
+          .filter(Boolean);
+
+        if (!rows.length) {
+          rows = parseSingleSelectRowsInput(value, label);
+        }
+        if (!rows.length) return null;
+
+        const sectionTitle = String(singleSelectSectionTitleInput?.value || '').trim() || 'Options';
+        const highlightLabel = String(singleSelectHighlightLabelInput?.value || '').trim();
+        const section = {
+          title: sectionTitle,
+          rows,
+        };
+        if (highlightLabel) {
+          section.highlight_label = highlightLabel;
+        }
+
+        params = {
+          title: label,
+          sections: [section],
+        };
+      }
+      else {
+        params.id = value;
+      }
 
       return { name: type, buttonParamsJson: JSON.stringify(params) };
     })
@@ -1356,7 +1571,7 @@ function updateCommandSubmitState() {
   if (!commandSubmitBtn) return;
 
   const trigger = String(commandTriggerInput?.value || '').trim();
-  const hasValidTrigger = Boolean(trigger) && trigger.startsWith('!');
+  const hasValidTrigger = Boolean(trigger) && trigger.startsWith('.');
   const selectedMediaType = String(commandMediaTypeInput?.value || '').trim();
   const hasMediaType = Boolean(selectedMediaType);
   const isNoMedia = selectedMediaType === 'none';
@@ -1454,9 +1669,9 @@ function resetCommandForm() {
 function normalizeCommandTrigger(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
-  const withoutPrefix = raw.replace(/^!+/, '').trim();
-  if (!withoutPrefix) return '!';
-  return `!${withoutPrefix}`;
+  const withoutPrefix = raw.replace(/^[!.]+/, '').trim();
+  if (!withoutPrefix) return '.';
+  return `.${withoutPrefix}`;
 }
 
 function fillCommandForm(command) {
@@ -1696,6 +1911,7 @@ function getButtonKindLabel(kind) {
   if (kind === 'cta_call') return 'Call';
   if (kind === 'cta_wa') return 'WhatsApp';
   if (kind === 'cta_copy') return 'Copy Code';
+  if (kind === 'single_select') return 'Single Select';
   return 'Quick Reply';
 }
 
@@ -1772,14 +1988,19 @@ function renderCommandPreviewButtons(command) {
 
   list.forEach((buttonItem) => {
     const params = parseButtonParams(buttonItem);
+    const firstSingleSelectRow = Array.isArray(params.sections)
+      ? params.sections
+        .flatMap((section) => (Array.isArray(section?.rows) ? section.rows : []))
+        .find((item) => item && typeof item === 'object' && (item.id || item.title))
+      : null;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn wa-preview-chip';
     const kind = String(buttonItem.name || '').trim();
-    const label = params.display_text || 'Button';
+    const label = params.display_text || params.title || firstSingleSelectRow?.title || 'Button';
     button.textContent = `${getButtonKindLabel(kind)}: ${label}`;
 
-    let metaValue = params.id || params.url || params.phone_number || params.copy_code || '';
+    let metaValue = params.id || params.url || params.phone_number || params.copy_code || firstSingleSelectRow?.id || '';
     if (metaValue) {
       const valueSpan = document.createElement('span');
       valueSpan.className = 'command-preview-button-value';

@@ -32,7 +32,18 @@ function sleep(ms) {
 }
 
 function stripCommandPrefix(text) {
-  return String(text || '').replace(/^![^\s]+\s*/i, '').trim();
+  return String(text || '').replace(/^[!.][^\s]+\s*/i, '').trim();
+}
+
+function normalizeInteractiveTrigger(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw.startsWith('.')) return raw;
+  if (raw.startsWith('!')) return `.${raw.slice(1)}`;
+
+  const cleaned = raw.replace(/^[^a-z0-9]+/, '');
+  if (!cleaned) return '';
+  return `.${cleaned}`;
 }
 
 function isLikelyUrl(value) {
@@ -231,9 +242,25 @@ class WhatsAppService {
     this.initPromise = null;
     this.authPath = path.join(process.cwd(), '.baileys_auth');
     this.defaultDialCode = String(process.env.DEFAULT_DIAL_CODE || '60').replace(/\D/g, '') || '60';
+    this.debugInteractive = process.env.WA_DEBUG_INTERACTIVE === '1';
     this.pairingCode = null;
     this.isRequestingPairingCode = false;
     this.store = null;
+  }
+
+  logInteractiveDebug(message, details = null) {
+    if (!this.debugInteractive) return;
+
+    if (details == null) {
+      console.log(`[WA][interactive] ${message}`);
+      return;
+    }
+
+    try {
+      console.log(`[WA][interactive] ${message}:`, JSON.stringify(details));
+    } catch (error) {
+      console.log(`[WA][interactive] ${message}:`, details);
+    }
   }
 
   async init() {
@@ -347,11 +374,12 @@ class WhatsAppService {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const disconnectReason = this.describeDisconnectReason(statusCode);
         const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
+        const isAuthInvalid = statusCode === 405;
         const isRestartRequired = statusCode === DisconnectReason.restartRequired;
         this.lastStatus = `Disconnected: ${disconnectReason}`;
         console.error('[WA] Disconnected event:', disconnectReason);
 
-        if (isLoggedOut) {
+        if (isLoggedOut || isAuthInvalid) {
           try {
             fs.rmSync(this.authPath, { recursive: true, force: true });
             fs.mkdirSync(this.authPath, { recursive: true });
@@ -360,7 +388,7 @@ class WhatsAppService {
           }
           this.qrCodeDataUrl = null;
           this.pairingCode = null;
-          this.scheduleReinitialize('logged_out');
+          this.scheduleReinitialize(isAuthInvalid ? 'auth_invalid' : 'logged_out');
           return;
         }
 
@@ -383,6 +411,7 @@ class WhatsAppService {
     if (statusCode === DisconnectReason.badSession) return 'bad_session (500)';
     if (statusCode === DisconnectReason.multideviceMismatch) return 'multidevice_mismatch (411)';
     if (statusCode === DisconnectReason.forbidden) return 'forbidden (403)';
+    if (statusCode === 405) return 'auth_invalid (405)';
     if (statusCode === DisconnectReason.unavailableService) return 'unavailable_service (503)';
     return statusCode ? `unknown (${statusCode})` : 'unknown';
   }
@@ -549,19 +578,37 @@ class WhatsAppService {
 
       const content = normalizeMessageContent(message.message) || message.message;
 
+      const interactiveSelectionId = this.extractInteractiveSelectionId(content);
       const text = this.extractMessageText(content);
 
-      if (text.trim() === '!vv') {
+      if (interactiveSelectionId) {
+        this.logInteractiveDebug('incoming selection detected', {
+          chatId,
+          interactiveSelectionId,
+          text,
+        });
+      }
+
+      if (text.trim() === '.vv' || text.trim() === '!vv') {
         await this.handleViewOnceCommand(chatId, content);
         continue;
       }
 
-      if (text.trim().startsWith('!')) {
+      if (text.trim().startsWith('.') || text.trim().startsWith('!')) {
         const handled = await this.handleBuiltInCommand(chatId, message, content, text);
         if (handled) continue;
       }
 
-      const matched = customCommandStore.matchCommand(text);
+      let matched = customCommandStore.matchCommand(text);
+      if (!matched) {
+        matched = this.matchInteractiveCommand(interactiveSelectionId);
+      }
+      if (interactiveSelectionId) {
+        this.logInteractiveDebug('selection match result', {
+          interactiveSelectionId,
+          matchedTrigger: matched?.trigger || null,
+        });
+      }
       if (!matched) continue;
 
       await this.replyWithCustomCommand(chatId, matched);
@@ -571,18 +618,7 @@ class WhatsAppService {
   extractMessageText(content) {
     if (!content || typeof content !== 'object') return '';
 
-    const interactiveParamsJson = content.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson;
-    let interactiveSelectedId = '';
-    if (typeof interactiveParamsJson === 'string' && interactiveParamsJson.trim()) {
-      try {
-        const parsed = JSON.parse(interactiveParamsJson);
-        if (parsed && typeof parsed === 'object') {
-          interactiveSelectedId = String(parsed.id || parsed.selected_id || '').trim();
-        }
-      } catch (error) {
-        interactiveSelectedId = '';
-      }
-    }
+    const interactiveSelectedId = this.extractInteractiveSelectionId(content);
 
     const candidates = [
       content.conversation,
@@ -591,6 +627,7 @@ class WhatsAppService {
       content.videoMessage?.caption,
       content.documentMessage?.caption,
       content.buttonsResponseMessage?.selectedButtonId,
+      content.buttonsResponseMessage?.selectedDisplayText,
       content.templateButtonReplyMessage?.selectedId,
       content.listResponseMessage?.singleSelectReply?.selectedRowId,
       interactiveSelectedId,
@@ -604,11 +641,98 @@ class WhatsAppService {
     return '';
   }
 
+  extractInteractiveSelectionId(content) {
+    if (!content || typeof content !== 'object') return '';
+
+    const viewOnceMessage = content.viewOnceMessage?.message || null;
+
+    const directCandidates = [
+      content.listResponseMessage?.singleSelectReply?.selectedRowId,
+      content.buttonsResponseMessage?.selectedButtonId,
+      content.templateButtonReplyMessage?.selectedId,
+      content.interactiveResponseMessage?.nativeFlowResponseMessage?.id,
+      content.interactiveResponseMessage?.nativeFlowResponseMessage?.selectedId,
+      content.interactiveResponseMessage?.nativeFlowResponseMessage?.selected_id,
+      viewOnceMessage?.listResponseMessage?.singleSelectReply?.selectedRowId,
+      viewOnceMessage?.buttonsResponseMessage?.selectedButtonId,
+      viewOnceMessage?.templateButtonReplyMessage?.selectedId,
+      viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.id,
+      viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.selectedId,
+      viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.selected_id,
+    ];
+
+    for (const candidate of directCandidates) {
+      const value = String(candidate || '').trim();
+      if (value) return value;
+    }
+
+    const paramsJsonCandidates = [
+      content.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson,
+      viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson,
+    ];
+
+    for (const interactiveParamsJson of paramsJsonCandidates) {
+      if (!(typeof interactiveParamsJson === 'string' && interactiveParamsJson.trim())) {
+        continue;
+      }
+
+      try {
+        const parsed = JSON.parse(interactiveParamsJson);
+        if (parsed && typeof parsed === 'object') {
+          // Prioritize fields that represent the user-selected value.
+          const selected = String(
+            parsed.selected_id
+            || parsed.selected_row_id
+            || parsed.single_select_reply?.selected_row_id
+            || parsed.button_id
+            || parsed.row_id
+            || parsed.id
+            || ''
+          ).trim();
+          if (selected) {
+            this.logInteractiveDebug('parsed paramsJson selection', {
+              selected,
+              parsed,
+            });
+            return selected;
+          }
+        }
+      } catch (error) {
+        this.logInteractiveDebug('failed to parse paramsJson', {
+          error: error.message,
+          interactiveParamsJson,
+        });
+        continue;
+      }
+    }
+
+    return '';
+  }
+
+  matchInteractiveCommand(selectionId) {
+    const raw = String(selectionId || '').trim();
+    if (!raw) return null;
+
+    const normalized = normalizeInteractiveTrigger(raw);
+
+    this.logInteractiveDebug('attempt command match', {
+      raw,
+      normalized,
+    });
+
+    return (
+      customCommandStore.findCommand(raw)
+      || customCommandStore.matchCommand(raw)
+      || customCommandStore.findCommand(normalized)
+      || null
+    );
+  }
+
   async handleBuiltInCommand(chatId, message, content, text) {
     const normalized = String(text || '').trim();
     const command = normalized.split(/\s+/)[0].toLowerCase();
 
-    if (command === '!sticker' || command === '!s') {
+    if (command === '.sticker' || command === '.s' || command === '!sticker' || command === '!s') {
       await this.handleStickerCommand(chatId, message, content);
       return true;
     }
@@ -619,7 +743,7 @@ class WhatsAppService {
   async resolveYouTubeTarget(input) {
     const raw = String(input || '').trim();
     if (!raw) {
-      throw new Error('Usage: !ytmp3 <judul atau link YouTube>');
+      throw new Error('Usage: .ytmp3 <judul atau link YouTube>');
     }
 
     if (isLikelyUrl(raw)) {
@@ -754,8 +878,8 @@ class WhatsAppService {
         );
       }
     } catch (error) {
-      console.error('[WA] !ytmp3 error:', error.message);
-      await this.sock.sendMessage(chatId, { text: `Gagal proses !ytmp3: ${error.message}` }, { quoted: message });
+      console.error('[WA] .ytmp3 error:', error.message);
+      await this.sock.sendMessage(chatId, { text: `Gagal proses .ytmp3: ${error.message}` }, { quoted: message });
     }
   }
 
@@ -825,8 +949,8 @@ class WhatsAppService {
         { quoted: message }
       );
     } catch (error) {
-      console.error('[WA] !ytmp4 error:', error.message);
-      await this.sock.sendMessage(chatId, { text: `Gagal proses !ytmp4: ${error.message}` }, { quoted: message });
+      console.error('[WA] .ytmp4 error:', error.message);
+      await this.sock.sendMessage(chatId, { text: `Gagal proses .ytmp4: ${error.message}` }, { quoted: message });
     }
   }
 
@@ -867,7 +991,7 @@ class WhatsAppService {
     if (!url || !/facebook\.com|fb\.watch/i.test(url)) {
       await this.sock.sendMessage(
         chatId,
-        { text: 'Usage: !facebook <link-facebook>\nContoh: !facebook https://www.facebook.com/...' },
+        { text: 'Usage: .facebook <link-facebook>\nContoh: .facebook https://www.facebook.com/...' },
         { quoted: message }
       );
       return;
@@ -888,7 +1012,7 @@ class WhatsAppService {
         { quoted: message }
       );
     } catch (error) {
-      console.error('[WA] !facebook error:', error.message);
+      console.error('[WA] .facebook error:', error.message);
       await this.sock.sendMessage(chatId, { text: 'Gagal download video Facebook. Coba link lain.' }, { quoted: message });
     }
   }
@@ -922,7 +1046,7 @@ class WhatsAppService {
     if (!url || !/instagram\.com|instagr\.am/i.test(url)) {
       await this.sock.sendMessage(
         chatId,
-        { text: 'Usage: !instagram <link-instagram>\nContoh: !instagram https://www.instagram.com/reel/...' },
+        { text: 'Usage: .instagram <link-instagram>\nContoh: .instagram https://www.instagram.com/reel/...' },
         { quoted: message }
       );
       return;
@@ -960,7 +1084,7 @@ class WhatsAppService {
         }
       }
     } catch (error) {
-      console.error('[WA] !instagram error:', error.message);
+      console.error('[WA] .instagram error:', error.message);
       await this.sock.sendMessage(chatId, { text: 'Gagal download media Instagram. Pastikan link publik.' }, { quoted: message });
     }
   }
@@ -1020,7 +1144,7 @@ class WhatsAppService {
     if (!target) {
       await this.sock.sendMessage(
         chatId,
-        { text: 'Usage: kirim/reply gambar, video, atau sticker lalu ketik !sticker' },
+        { text: 'Usage: kirim/reply gambar, video, atau sticker lalu ketik .sticker' },
         { quoted: message }
       );
       return;
@@ -1032,7 +1156,7 @@ class WhatsAppService {
       const stickerBuffer = await this.convertToWebp(sourceBuffer, target.type);
       await this.sock.sendMessage(chatId, { sticker: stickerBuffer }, { quoted: message });
     } catch (error) {
-      console.error('[WA] !sticker error:', error.message);
+      console.error('[WA] .sticker error:', error.message);
       await this.sock.sendMessage(chatId, { text: 'Gagal membuat sticker dari media tersebut.' }, { quoted: message });
     }
   }
@@ -1060,10 +1184,10 @@ class WhatsAppService {
           { video: buffer, fileName: 'media.mp4', caption: quotedVideo.caption || '' }
         );
       } else {
-        await this.sock.sendMessage(chatId, { text: 'Reply to a "view once" image/video message with !vv to reopen it.' });
+        await this.sock.sendMessage(chatId, { text: 'Reply to a "view once" image/video message with .vv to reopen it.' });
       }
     } catch (error) {
-      console.error('[WA] Failed to process !vv command:', error.message);
+      console.error('[WA] Failed to process .vv command:', error.message);
       await this.sock.sendMessage(chatId, { text: 'Failed to reopen that media.' });
     }
   }

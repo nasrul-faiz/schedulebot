@@ -857,7 +857,7 @@ textarea:focus {
 
 .button-row {
   display: grid;
-  grid-template-columns: 110px 1fr 1fr auto;
+  grid-template-columns: 110px 1fr 1fr 1fr auto;
   gap: 8px;
   align-items: center;
   background: var(--surface);
@@ -873,6 +873,56 @@ textarea:focus {
 }
 
 .button-row .btn-remove-row {
+  height: 30px;
+  width: 30px;
+  padding: 0;
+}
+
+.single-select-editor {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--surface-2) 65%, transparent);
+}
+
+.single-select-editor[hidden] {
+  display: none !important;
+}
+
+.button-row.is-single-select {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+}
+
+.single-select-editor-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.single-select-rows-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.single-select-row-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.single-select-row-editor input {
+  padding: 7px 10px;
+  font-size: 12.5px;
+}
+
+.single-select-row-editor .btn-remove-single-row {
   height: 30px;
   width: 30px;
   padding: 0;
@@ -1754,6 +1804,15 @@ tbody tr:hover {
   .top-nav-title-wrap {
     min-height: 38px;
     padding: 0 10px;
+  }
+
+  .button-row {
+    grid-template-columns: 1fr;
+  }
+
+  .single-select-editor-head,
+  .single-select-row-editor {
+    grid-template-columns: 1fr;
   }
 
   .card-header,
