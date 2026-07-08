@@ -577,27 +577,6 @@ class WhatsAppService {
   async handleBuiltInCommand(chatId, message, content, text) {
     const normalized = String(text || '').trim();
     const command = normalized.split(/\s+/)[0].toLowerCase();
-    const args = stripCommandPrefix(normalized);
-
-    if (command === '!ytmp3') {
-      await this.handleYtmp3Command(chatId, message, args);
-      return true;
-    }
-
-    if (command === '!ytmp4') {
-      await this.handleYtmp4Command(chatId, message, args);
-      return true;
-    }
-
-    if (command === '!facebook' || command === '!fb') {
-      await this.handleFacebookCommand(chatId, message, args);
-      return true;
-    }
-
-    if (command === '!instagram' || command === '!ig') {
-      await this.handleInstagramCommand(chatId, message, args);
-      return true;
-    }
 
     if (command === '!sticker' || command === '!s') {
       await this.handleStickerCommand(chatId, message, content);

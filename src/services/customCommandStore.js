@@ -6,6 +6,7 @@ const DATA_FILE = path.join(DATA_DIR, 'custom-commands.json');
 
 const ALLOWED_CATEGORIES = ['General', 'Greeting', 'Info', 'Utility', 'Fun', 'Media', 'Other'];
 const ALLOWED_MEDIA_TYPES = ['image', 'video', 'audio', 'document'];
+const DISABLED_TRIGGERS = new Set(['!ytmp3', '!ytmp4', '!facebook', '!instagram', '!fb', '!ig']);
 const DEFAULT_COMMANDS = [
   {
     trigger: '!alive',
@@ -19,34 +20,6 @@ const DEFAULT_COMMANDS = [
     response: 'Reply to a view-once image/video message with !vv to reopen the media.',
     description: 'Open quoted view-once media',
     category: 'Utility',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    trigger: '!ytmp3',
-    response: '🎵 Download audio YouTube. Usage: !ytmp3 <judul atau link YouTube>',
-    description: 'Download YouTube audio (MP3)',
-    category: 'Media',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    trigger: '!ytmp4',
-    response: '🎬 Download video YouTube. Usage: !ytmp4 <judul atau link YouTube>',
-    description: 'Download YouTube video (MP4)',
-    category: 'Media',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    trigger: '!facebook',
-    response: '📘 Download video Facebook. Usage: !facebook <link-facebook>',
-    description: 'Download Facebook video',
-    category: 'Media',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    trigger: '!instagram',
-    response: '📸 Download media Instagram. Usage: !instagram <link-instagram>',
-    description: 'Download Instagram media',
-    category: 'Media',
     createdAt: new Date().toISOString(),
   },
   {
@@ -106,6 +79,7 @@ function ensureDefaultCommands() {
 
 ensureDefaultCommands();
 migrateLegacyTriggers();
+purgeDisabledCommands();
 
 function normalizeCategory(value) {
   const raw = String(value || '').trim();
@@ -157,6 +131,15 @@ function migrateLegacyTriggers() {
 
   commands.length = 0;
   commands.push(...deduped);
+  persistCommands();
+}
+
+function purgeDisabledCommands() {
+  const kept = commands.filter((item) => !DISABLED_TRIGGERS.has(normalizeTrigger(item?.trigger)));
+  if (kept.length === commands.length) return;
+
+  commands.length = 0;
+  commands.push(...kept);
   persistCommands();
 }
 
@@ -221,6 +204,9 @@ function createCommand(payload) {
   if (!cleanTrigger) throw new Error('Trigger is required');
   if (!cleanTrigger.startsWith('!')) {
     throw new Error('Trigger must start with ! (example: !hello)');
+  }
+  if (DISABLED_TRIGGERS.has(cleanTrigger)) {
+    throw new Error(`Command ${cleanTrigger} is disabled`);
   }
 
   if (!cleanResponse && !cleanMediaUrl) {
