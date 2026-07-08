@@ -447,7 +447,18 @@
                           <button type="button" class="btn btn-outline btn-sm" id="addButtonRowBtn">Add Button</button>
                         </div>
                         <div id="buttonRows" class="button-rows"></div>
-                        <p class="hint">Supports all official atexovi-baileys buttons: quick reply, open link, call, copy code, and single select (single-select value also accepts JSON rows).</p>
+                        <p class="hint">
+                          <strong>📌 Button Setup Guide:</strong><br/>
+                          ✓ <strong>Quick Reply Button:</strong> The <strong>Value (id)</strong> MUST match an existing command trigger (e.g., ".hello", ".menu1")<br/>
+                          ✓ <strong>Single Select:</strong> Each row ID must also match a command trigger<br/>
+                          ✓ <strong>Call Button:</strong> Enter phone number with country code (e.g., "60123456789")<br/>
+                          ✓ <strong>Copy Code Button:</strong> Enter the code to copy (e.g., "PROMO2024")<br/>
+                          <br/>
+                          <strong>Example:</strong> If you create a command with trigger <strong>.hello</strong>, then add a Quick Reply button with Value = <strong>.hello</strong><br/>
+                          When user clicks the button, it will trigger the <strong>.hello</strong> command.<br/>
+                          <br/>
+                          For JSON rows format: <code>[{"id":".cmd1","title":"Option 1"},{"id":".cmd2","title":"Option 2"}]</code>
+                        </p>
                       </div>
 
                       <div class="field-row optional-meta-row" id="commandOptionalMetaRow">

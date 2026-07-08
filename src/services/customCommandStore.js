@@ -39,7 +39,7 @@ const DEFAULT_COMMANDS = [
       {
         name: 'quick_reply',
         buttonParamsJson: JSON.stringify({
-          id: 'alive',
+          id: '.alive',
           display_text: 'Check bot',
         }),
       },
@@ -114,6 +114,22 @@ const DEFAULT_COMMANDS = [
               ],
             },
           ],
+        }),
+      },
+    ],
+    createdAt: new Date().toISOString(),
+  },
+  {
+    trigger: '.testbutton',
+    response: '✅ Tahniah! Button berfungsi. Tekan salah satu button di bawah untuk cuba yang lain.',
+    description: 'Test button - pastikan button working',
+    category: 'Utility',
+    buttons: [
+      {
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({
+          id: '.menu1',
+          display_text: 'Quick Reply Test',
         }),
       },
     ],

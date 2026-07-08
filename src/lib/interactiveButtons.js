@@ -141,6 +141,19 @@ function normalizeButton(button) {
     };
   }
 
+  if (name === 'cta_copy') {
+    const copyCode = String(params.copy_code || '').trim();
+    if (!copyCode) return null;
+
+    return {
+      name,
+      buttonParamsJson: JSON.stringify({
+        display_text: displayText,
+        copy_code: copyCode,
+      }),
+    };
+  }
+
   if (name === 'single_select') {
     const title = String(params.title || params.display_text || 'Choose option').trim() || 'Choose option';
     const sections = normalizeSingleSelectSections(params.sections, String(params.id || '').trim() || title);

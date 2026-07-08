@@ -46,6 +46,69 @@ function normalizeInteractiveTrigger(value) {
   return `.${cleaned}`;
 }
 
+function pickInteractiveSelectionFromParsedParams(parsed) {
+  if (!parsed || typeof parsed !== 'object') return '';
+
+  const directCandidates = [
+    parsed.selected_id,
+    parsed.selectedId,
+    parsed.selected_row_id,
+    parsed.selectedRowId,
+    parsed.single_select_reply?.selected_row_id,
+    parsed.single_select_reply?.selectedRowId,
+    parsed.singleSelectReply?.selected_row_id,
+    parsed.singleSelectReply?.selectedRowId,
+    parsed.button_id,
+    parsed.buttonId,
+    parsed.quick_reply_id,
+    parsed.quickReplyId,
+    parsed.row_id,
+    parsed.rowId,
+    parsed.id,
+    // Additional fallback candidates for native flow responses
+    parsed.button?.id,
+    parsed.button?.buttonId,
+    parsed.reply?.id,
+    parsed.button_reply?.id,
+  ];
+
+  for (const candidate of directCandidates) {
+    const value = String(candidate || '').trim();
+    if (value) return value;
+  }
+
+  // Some clients can send compact payloads with an unusual key shape.
+  // Search nested values and return the first non-empty scalar string.
+  const queue = [parsed];
+  const seen = new Set();
+
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') continue;
+    if (seen.has(current)) continue;
+    seen.add(current);
+
+    for (const [key, value] of Object.entries(current)) {
+      const keyLower = String(key || '').toLowerCase();
+      if (['name', 'title', 'display_text', 'description', 'footer', 'body', 'text', 'message'].includes(keyLower)) {
+        continue;
+      }
+
+      if (typeof value === 'string') {
+        const cleaned = value.trim();
+        if (cleaned) return cleaned;
+        continue;
+      }
+
+      if (value && typeof value === 'object') {
+        queue.push(value);
+      }
+    }
+  }
+
+  return '';
+}
+
 function isLikelyUrl(value) {
   try {
     const parsed = new URL(String(value || '').trim());
@@ -608,6 +671,9 @@ class WhatsAppService {
           interactiveSelectionId,
           matchedTrigger: matched?.trigger || null,
         });
+        if (!matched) {
+          console.warn(`[WA] Button click received but no matching command found. Selection ID: "${interactiveSelectionId}". Enable WA_DEBUG_INTERACTIVE=1 for more details.`);
+        }
       }
       if (!matched) continue;
 
@@ -653,12 +719,16 @@ class WhatsAppService {
       content.interactiveResponseMessage?.nativeFlowResponseMessage?.id,
       content.interactiveResponseMessage?.nativeFlowResponseMessage?.selectedId,
       content.interactiveResponseMessage?.nativeFlowResponseMessage?.selected_id,
+      content.interactiveResponseMessage?.nativeFlowResponseMessage?.button?.id,
+      content.interactiveResponseMessage?.nativeFlowResponseMessage?.buttons?.[0]?.id,
       viewOnceMessage?.listResponseMessage?.singleSelectReply?.selectedRowId,
       viewOnceMessage?.buttonsResponseMessage?.selectedButtonId,
       viewOnceMessage?.templateButtonReplyMessage?.selectedId,
       viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.id,
       viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.selectedId,
       viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.selected_id,
+      viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.button?.id,
+      viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.buttons?.[0]?.id,
     ];
 
     for (const candidate of directCandidates) {
@@ -668,7 +738,9 @@ class WhatsAppService {
 
     const paramsJsonCandidates = [
       content.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson,
+      content.interactiveResponseMessage?.nativeFlowResponseMessage?.buttonParamsJson,
       viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson,
+      viewOnceMessage?.interactiveResponseMessage?.nativeFlowResponseMessage?.buttonParamsJson,
     ];
 
     for (const interactiveParamsJson of paramsJsonCandidates) {
@@ -678,17 +750,19 @@ class WhatsAppService {
 
       try {
         const parsed = JSON.parse(interactiveParamsJson);
+        if (typeof parsed === 'string') {
+          const selected = parsed.trim();
+          if (selected) {
+            this.logInteractiveDebug('parsed paramsJson string selection', {
+              selected,
+              parsed: interactiveParamsJson,
+            });
+            return selected;
+          }
+        }
+
         if (parsed && typeof parsed === 'object') {
-          // Prioritize fields that represent the user-selected value.
-          const selected = String(
-            parsed.selected_id
-            || parsed.selected_row_id
-            || parsed.single_select_reply?.selected_row_id
-            || parsed.button_id
-            || parsed.row_id
-            || parsed.id
-            || ''
-          ).trim();
+          const selected = pickInteractiveSelectionFromParsedParams(parsed);
           if (selected) {
             this.logInteractiveDebug('parsed paramsJson selection', {
               selected,
@@ -720,12 +794,105 @@ class WhatsAppService {
       normalized,
     });
 
-    return (
+    // Try direct matches first
+    const directMatch = (
       customCommandStore.findCommand(raw)
       || customCommandStore.matchCommand(raw)
       || customCommandStore.findCommand(normalized)
-      || null
     );
+    if (directMatch) {
+      this.logInteractiveDebug('matched via direct command lookup', {
+        trigger: directMatch.trigger,
+      });
+      return directMatch;
+    }
+
+    // If no direct match, scan all commands to find one that has this button ID
+    // This handles cases where button ID doesn't exactly match trigger
+    const commands = customCommandStore.listCommands();
+    
+    // Collect all possible matching criteria to try
+    const matchCandidates = [raw, normalized];
+    // Also try variations: if raw is "button_123", try "button", "123"
+    if (raw.includes('_')) {
+      matchCandidates.push(...raw.split('_').filter(Boolean));
+    }
+    if (raw.includes('-')) {
+      matchCandidates.push(...raw.split('-').filter(Boolean));
+    }
+    
+    for (const command of commands) {
+      if (!Array.isArray(command.buttons)) continue;
+
+      for (const button of command.buttons) {
+        if (!button || typeof button !== 'object') continue;
+
+        try {
+          const params = typeof button.buttonParamsJson === 'string'
+            ? JSON.parse(button.buttonParamsJson)
+            : (button.buttonParamsJson || {});
+
+          if (!params || typeof params !== 'object') continue;
+
+          // Check if button id/selected value matches for quick_reply, cta_copy, cta_call, cta_wa
+          const buttonId = String(params.id || params.copy_code || params.phone_number || '').trim();
+          const normalizedButtonId = normalizeInteractiveTrigger(buttonId);
+          
+          // Try all matching candidates
+          for (const candidate of matchCandidates) {
+            if (
+              candidate === buttonId
+              || candidate === normalizedButtonId
+              || buttonId === candidate
+              || normalizedButtonId === candidate
+            ) {
+              this.logInteractiveDebug('matched via button id search', {
+                trigger: command.trigger,
+                buttonType: button.name,
+                buttonId,
+                selectionId: raw,
+              });
+              return command;
+            }
+          }
+
+          // Check if any single_select row matches
+          if (button.name === 'single_select' && Array.isArray(params.sections)) {
+            for (const section of params.sections) {
+              if (!Array.isArray(section.rows)) continue;
+              for (const row of section.rows) {
+                const rowId = String(row?.id || '').trim();
+                const normalizedRowId = normalizeInteractiveTrigger(rowId);
+                
+                for (const candidate of matchCandidates) {
+                  if (
+                    candidate === rowId
+                    || candidate === normalizedRowId
+                    || rowId === candidate
+                    || normalizedRowId === candidate
+                  ) {
+                    this.logInteractiveDebug('matched via single_select row id', {
+                      trigger: command.trigger,
+                      rowId,
+                      selectionId: raw,
+                    });
+                    return command;
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          this.logInteractiveDebug('error scanning button in command', {
+            error: error.message,
+            trigger: command.trigger,
+          });
+        }
+      }
+    }
+
+    this.logInteractiveDebug('no command found for selection', { raw, normalized, matchCandidates });
+    return null;
   }
 
   async handleBuiltInCommand(chatId, message, content, text) {

@@ -99,4 +99,45 @@ Project ini sudah disediakan konfigurasi Railway dalam file `railway.json`.
 
 5. Deploy.
 
+## Troubleshooting
+
+### Buttons tidak berfungsi / tidak bertindak balas
+
+**Punca Utama:** Button ID tidak sepadan dengan command trigger.
+
+**Penyelesaian:**
+
+1. **Pastikan button ID sepadan dengan trigger yang ada**
+   - Jika command trigger ialah `.hello`, button ID MESTI `.hello` juga
+   - Jika button ID `.hello` tetapi trigger `.hi`, ia tidak akan berfungsi
+   - Semua huruf dan simbol mesti sama persis
+
+2. **Test dengan demo commands**
+   - Cuba trigger `.demobutton` - ini sudah ada button yang berfungsi
+   - Cuba trigger `.testbutton` - ini lebih ringkas untuk test
+   - Jika demo commands berfungsi, berarti sistem button working
+
+3. **Lihat debug log**
+   - Dalam file `.env`, set `WA_DEBUG_INTERACTIVE=1`
+   - Restart bot: `npm run dev`
+   - Klik button dan lihat log di terminal
+   - Cari baris yang menyebut "no command found for selection" atau "matched via button id search"
+
+4. **Contoh yang betul:**
+   - Command trigger: `.hello`
+   - Quick Reply button dengan Value: `.hello`
+   - Response: "Salam! Anda tekan button hello"
+   - Apabila user klik button, bot balas dengan "Salam! Anda tekan button hello"
+
+5. **Single Select Menu:**
+   - Setiap row ID mesti match command trigger
+   - Contoh JSON: `[{"id":".menu1","title":"Menu 1"},{"id":".info","title":"Maklumat"}]`
+   - Pastikan `.menu1` dan `.info` commands sudah wujud
+
+6. **Jika masih tidak berfungsi:**
+   - Periksa browser console (F12) untuk error
+   - Periksa terminal bot untuk error message
+   - Pastikan button sudah disimpan (reload page untuk confirm)
+   - Cuba buat command baru dengan button baru (jangan edit command lama)
+
 Healthcheck endpoint tersedia di `GET /healthz`.
