@@ -16,7 +16,7 @@ Bot WhatsApp untuk menjadwalkan pengiriman pesan melalui web dashboard.
 - Node.js + Express
 - whatsapp-web.js
 - EJS (server-side rendering)
-- In-memory store (tanpa database)
+- Schedule storage: PostgreSQL (via `DATABASE_URL`) atau in-memory fallback
 
 ## Cara Menjalankan
 
@@ -37,6 +37,12 @@ Bot WhatsApp untuk menjadwalkan pengiriman pesan melalui web dashboard.
 
 	```env
 	TZ=Asia/Kuala_Lumpur
+	```
+
+	Jika mahu simpan schedule ke PostgreSQL (contoh Neon), set juga:
+
+	```env
+	DATABASE_URL=postgresql://USER:PASSWORD@HOST/DB?sslmode=require
 	```
 
 	Untuk nombor personal, anda boleh set `DEFAULT_DIAL_CODE=60` supaya nombor lokal seperti `017xxxxxxx` akan ditukar automatik kepada format antarabangsa.
@@ -69,7 +75,8 @@ Bot WhatsApp untuk menjadwalkan pengiriman pesan melalui web dashboard.
 
 ## Catatan
 
-- Data schedule saat ini disimpan di memori (akan hilang jika server restart).
+- Jika `DATABASE_URL` diset, data schedule disimpan ke PostgreSQL.
+- Jika `DATABASE_URL` tidak diset, schedule fallback ke in-memory (hilang jika server restart).
 - Session WhatsApp disimpan lokal di folder `.baileys_auth`.
 
 ## Deploy ke Railway
@@ -83,6 +90,7 @@ Project ini sudah disediakan konfigurasi Railway dalam file `railway.json`.
 
 	- `TZ=Asia/Kuala_Lumpur`
 	- `DEFAULT_DIAL_CODE=60`
+	- `DATABASE_URL=postgresql://...`
 	- `NIXPACKS_NODE_VERSION=20` (fallback jika Railway masih detect Node 18)
 
 	`PORT` tidak perlu diset manual kerana Railway akan inject otomatis.

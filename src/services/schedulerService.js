@@ -10,25 +10,29 @@ class SchedulerService {
     if (this.intervalRef) return;
 
     this.intervalRef = setInterval(async () => {
-      const dueItems = scheduleStore.getPendingSchedules();
-      if (!dueItems.length) return;
+      try {
+        const dueItems = await scheduleStore.getPendingSchedules();
+        if (!dueItems.length) return;
 
-      for (const item of dueItems) {
-        try {
-          await this.whatsappService.sendMessage(item.targetType, item.targetValue, item.message);
-          scheduleStore.markSent(item.id);
-          console.log(
-            `[SCHEDULER] Sent #${item.id} to ${item.targetType}:${item.targetValue}`
-          );
-        } catch (error) {
-          if (error.message === 'WhatsApp client is not ready') {
-            console.log(`[SCHEDULER] Waiting WA ready, retry #${item.id}...`);
-            continue;
+        for (const item of dueItems) {
+          try {
+            await this.whatsappService.sendMessage(item.targetType, item.targetValue, item.message);
+            await scheduleStore.markSent(item.id);
+            console.log(
+              `[SCHEDULER] Sent #${item.id} to ${item.targetType}:${item.targetValue}`
+            );
+          } catch (error) {
+            if (error.message === 'WhatsApp client is not ready') {
+              console.log(`[SCHEDULER] Waiting WA ready, retry #${item.id}...`);
+              continue;
+            }
+
+            await scheduleStore.markFailed(item.id, error.message);
+            console.error(`[SCHEDULER] Failed #${item.id}:`, error.message);
           }
-
-          scheduleStore.markFailed(item.id, error.message);
-          console.error(`[SCHEDULER] Failed #${item.id}:`, error.message);
         }
+      } catch (error) {
+        console.error('[SCHEDULER] Tick failed:', error.message);
       }
     }, 5000);
 

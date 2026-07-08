@@ -6,6 +6,7 @@ const express = require('express');
 
 const whatsappService = require('./services/whatsappService');
 const SchedulerService = require('./services/schedulerService');
+const scheduleStore = require('./services/scheduleStore');
 const createDashboardRouter = require('./routes/dashboardRoutes');
 
 const app = express();
@@ -79,11 +80,20 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
-whatsappService.init();
+async function bootstrap() {
+  await scheduleStore.init();
 
-const scheduler = new SchedulerService(whatsappService);
-scheduler.start();
+  whatsappService.init();
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`[WEB] Dashboard running at http://localhost:${port}`);
+  const scheduler = new SchedulerService(whatsappService);
+  scheduler.start();
+
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`[WEB] Dashboard running at http://localhost:${port}`);
+  });
+}
+
+bootstrap().catch((error) => {
+  console.error('[BOOT] Failed to start server:', error);
+  process.exit(1);
 });

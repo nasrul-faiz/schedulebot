@@ -52,8 +52,8 @@ function parseClientLocalDateTime(scheduleAt, timezoneOffsetMinutes) {
 function createDashboardRouter(whatsappService) {
   const router = express.Router();
 
-  function getDashboardViewData() {
-    const schedules = scheduleStore.listSchedules();
+  async function getDashboardViewData() {
+    const schedules = await scheduleStore.listSchedules();
     const waState = whatsappService.getConnectionState();
     const scheduleStats = schedules.reduce(
       (acc, item) => {
@@ -81,8 +81,13 @@ function createDashboardRouter(whatsappService) {
     };
   }
 
-  router.get('/', (req, res) => {
-    res.render('dashboard', getDashboardViewData());
+  router.get('/', async (req, res, next) => {
+    try {
+      const viewData = await getDashboardViewData();
+      res.render('dashboard', viewData);
+    } catch (error) {
+      next(error);
+    }
   });
 
   router.get('/api/custom-commands', (req, res) => {
@@ -141,50 +146,58 @@ function createDashboardRouter(whatsappService) {
     return res.status(204).send();
   });
 
-  router.post('/api/schedules', (req, res) => {
-    const { targetType, targetValue, message, scheduleAt, timezoneOffsetMinutes } = req.body;
-    const normalizedTargetType =
-      targetType === 'personal-manual' || targetType === 'personal-chat' ? 'personal' : targetType;
+  router.post('/api/schedules', async (req, res, next) => {
+    try {
+      const { targetType, targetValue, message, scheduleAt, timezoneOffsetMinutes } = req.body;
+      const normalizedTargetType =
+        targetType === 'personal-manual' || targetType === 'personal-chat' ? 'personal' : targetType;
 
-    if (!normalizedTargetType || !targetValue || !message || !scheduleAt) {
-      return res.status(400).json({
-        error: 'targetType, targetValue, message, and scheduleAt are required',
+      if (!normalizedTargetType || !targetValue || !message || !scheduleAt) {
+        return res.status(400).json({
+          error: 'targetType, targetValue, message, and scheduleAt are required',
+        });
+      }
+
+      if (!['personal', 'group'].includes(normalizedTargetType)) {
+        return res.status(400).json({ error: 'targetType must be personal or group' });
+      }
+
+      const parsed = parseClientLocalDateTime(scheduleAt, timezoneOffsetMinutes);
+      if (!parsed.isValid()) {
+        return res.status(400).json({
+          error: 'Invalid scheduleAt format',
+        });
+      }
+
+      const created = await scheduleStore.createSchedule({
+        targetType: normalizedTargetType,
+        targetValue,
+        message,
+        scheduleAt: parsed.toISOString(),
       });
+
+      return res.status(201).json(created);
+    } catch (error) {
+      return next(error);
     }
-
-    if (!['personal', 'group'].includes(normalizedTargetType)) {
-      return res.status(400).json({ error: 'targetType must be personal or group' });
-    }
-
-    const parsed = parseClientLocalDateTime(scheduleAt, timezoneOffsetMinutes);
-    if (!parsed.isValid()) {
-      return res.status(400).json({
-        error: 'Invalid scheduleAt format',
-      });
-    }
-
-    const created = scheduleStore.createSchedule({
-      targetType: normalizedTargetType,
-      targetValue,
-      message,
-      scheduleAt: parsed.toISOString(),
-    });
-
-    return res.status(201).json(created);
   });
 
-  router.delete('/api/schedules/:id', (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ error: 'Invalid ID' });
-    }
+  router.delete('/api/schedules/:id', async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: 'Invalid ID' });
+      }
 
-    const deleted = scheduleStore.removeSchedule(id);
-    if (!deleted) {
-      return res.status(404).json({ error: 'Schedule not found' });
-    }
+      const deleted = await scheduleStore.removeSchedule(id);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Schedule not found' });
+      }
 
-    return res.status(204).send();
+      return res.status(204).send();
+    } catch (error) {
+      return next(error);
+    }
   });
 
   router.get('/api/deleted-messages', (req, res) => {
