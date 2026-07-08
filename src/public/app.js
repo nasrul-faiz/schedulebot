@@ -364,6 +364,17 @@ setTabbedPanel(
   { create: commandCreatePanel, list: commandListPanel }
 );
 
+if (pairingPhoneInput) {
+  pairingPhoneInput.addEventListener('input', () => {
+    const rawValue = String(pairingPhoneInput.value || '');
+    const digitsOnly = rawValue.replace(/\D+/g, '');
+    const normalized = rawValue.startsWith('+') ? `+${digitsOnly}` : digitsOnly;
+    if (pairingPhoneInput.value !== normalized) {
+      pairingPhoneInput.value = normalized;
+    }
+  });
+}
+
 if (requestPairingBtn) {
   requestPairingBtn.addEventListener('click', async () => {
     if (isWhatsAppReady) {
@@ -374,7 +385,16 @@ if (requestPairingBtn) {
       return;
     }
 
-    const phoneNumber = pairingPhoneInput ? pairingPhoneInput.value.trim() : '';
+    const phoneNumber = pairingPhoneInput
+      ? (() => {
+        const rawValue = String(pairingPhoneInput.value || '').trim();
+        const digitsOnly = rawValue.replace(/\D+/g, '');
+        return rawValue.startsWith('+') ? `+${digitsOnly}` : digitsOnly;
+      })()
+      : '';
+    if (pairingPhoneInput) {
+      pairingPhoneInput.value = phoneNumber;
+    }
     if (!phoneNumber) {
       if (pairingFeedback) {
         pairingFeedback.textContent = 'Please enter a phone number';
@@ -564,19 +584,12 @@ function syncTargetInputContent() {
     return;
   }
 
-  if (targetTypeInput.value === 'personal-chat') {
-    targetValueField.hidden = true;
-    if (groupTools) groupTools.hidden = true;
-    if (personalChatTools) personalChatTools.hidden = false;
-    loadPersonalChats();
-    return;
-  }
-
   targetValueField.hidden = false;
-  targetValueLabel.textContent = 'Destination Number (62812xxxx)';
-  targetHint.textContent = 'Personal example: 6281234567890';
+  targetValueLabel.textContent = 'Personal ID / Number (example: 62812xxxx@s.whatsapp.net)';
+  targetHint.textContent = 'You can enter phone number only or with @s.whatsapp.net suffix';
   if (groupTools) groupTools.hidden = true;
-  if (personalChatTools) personalChatTools.hidden = true;
+  if (personalChatTools) personalChatTools.hidden = false;
+  loadPersonalChats();
 }
 
 if (targetTypeInput) {
@@ -656,26 +669,18 @@ if (form) {
 
     const formData = new FormData(form);
     const selectedType = String(formData.get('targetType') || '').trim();
-    const selectedPersonalChatId = String(personalChatPicker?.value || '').trim();
     const targetValueRaw = String(formData.get('targetValue') || '').trim();
-    const normalizedTargetType =
-      selectedType === 'personal-manual' || selectedType === 'personal-chat' ? 'personal' : selectedType;
-    const normalizedTargetValue = selectedType === 'personal-chat'
-      ? selectedPersonalChatId
-      : targetValueRaw;
 
     const payload = {
-      targetType: normalizedTargetType,
-      targetValue: normalizedTargetValue,
+      targetType: selectedType,
+      targetValue: targetValueRaw,
       message: String(formData.get('message') || '').trim(),
       scheduleAt: String(formData.get('scheduleAt') || '').trim(),
       timezoneOffsetMinutes: new Date().getTimezoneOffset(),
     };
 
     if (!payload.targetValue) {
-      feedback.textContent = selectedType === 'personal-chat'
-        ? 'Please select a personal chat first.'
-        : 'Target value is required.';
+      feedback.textContent = 'Target value is required.';
       feedback.style.color = '#b42318';
       return;
     }
@@ -979,10 +984,18 @@ function resetCommandForm() {
   updateCommandFormFlow();
 }
 
+function normalizeCommandTrigger(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const withoutPrefix = raw.replace(/^!+/, '').trim();
+  if (!withoutPrefix) return '!';
+  return `!${withoutPrefix}`;
+}
+
 function fillCommandForm(command) {
   if (!commandForm || !command) return;
 
-  if (commandTriggerInput) commandTriggerInput.value = command.trigger || '';
+  if (commandTriggerInput) commandTriggerInput.value = normalizeCommandTrigger(command.trigger || '');
   if (commandCategoryInput) commandCategoryInput.value = command.category || 'General';
   if (commandDescriptionInput) commandDescriptionInput.value = command.description || '';
   if (commandResponseInput) commandResponseInput.value = command.response || '';
@@ -1018,7 +1031,13 @@ if (commandCancelBtn) {
 }
 
 if (commandTriggerInput) {
-  commandTriggerInput.addEventListener('input', updateCommandFormFlow);
+  commandTriggerInput.addEventListener('input', () => {
+    const normalized = normalizeCommandTrigger(commandTriggerInput.value);
+    if (commandTriggerInput.value !== normalized) {
+      commandTriggerInput.value = normalized;
+    }
+    updateCommandFormFlow();
+  });
 }
 
 if (commandMediaTypeInput) {
@@ -1085,7 +1104,7 @@ if (commandForm) {
     }
 
     const payload = {
-      trigger: String(formData.get('trigger') || '').trim(),
+      trigger: normalizeCommandTrigger(formData.get('trigger') || ''),
       category: String(formData.get('category') || '').trim(),
       description: String(formData.get('description') || '').trim(),
       response: String(formData.get('response') || '').trim(),
@@ -1122,14 +1141,6 @@ if (commandForm) {
   });
 }
 
-document.querySelectorAll('.btn-edit-command').forEach((button) => {
-  button.addEventListener('click', () => {
-    const trigger = button.dataset.trigger;
-    const command = commandsByTrigger.get(trigger);
-    if (command) fillCommandForm(command);
-  });
-});
-
 const commandPreviewModal = document.getElementById('commandPreviewModal');
 const closeCommandPreviewModalBtn = document.getElementById('closeCommandPreviewModal');
 const commandPreviewViewport = document.getElementById('commandPreviewViewport');
@@ -1146,6 +1157,11 @@ const commandPreviewMeta = document.getElementById('commandPreviewMeta');
 const commandPreviewDeliveryHint = document.getElementById('commandPreviewDeliveryHint');
 const commandPreviewButtons = document.getElementById('commandPreviewButtons');
 const commandPreviewActionBtn = document.getElementById('commandPreviewActionBtn');
+const commandPreviewIncomingText = document.getElementById('commandPreviewIncomingText');
+const commandPreviewIncomingTime = document.getElementById('commandPreviewIncomingTime');
+const commandPreviewOutgoingTime = document.getElementById('commandPreviewOutgoingTime');
+const commandPreviewDateChip = document.getElementById('commandPreviewDateChip');
+const commandPreviewStatusTime = document.querySelector('.wa-status-time');
 
 function closeCommandPreviewModal() {
   if (!commandPreviewModal) return;
@@ -1209,6 +1225,13 @@ function getButtonKindLabel(kind) {
   if (kind === 'cta_wa') return 'WhatsApp';
   if (kind === 'cta_copy') return 'Copy Code';
   return 'Quick Reply';
+}
+
+function buildPreviewNowParts() {
+  const now = new Date();
+  const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const day = now.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+  return { time, day };
 }
 
 function renderCommandPreviewMeta(command) {
@@ -1335,6 +1358,7 @@ function openCommandPreviewModal(command) {
     ? String(command.description)
     : 'online';
   const textContent = String(command.response || '').trim();
+  const { time, day } = buildPreviewNowParts();
 
   resetCommandPreviewMedia();
 
@@ -1371,6 +1395,29 @@ function openCommandPreviewModal(command) {
     commandPreviewBadge.textContent = mediaTypeLabel;
   }
 
+  if (commandPreviewStatusTime) {
+    commandPreviewStatusTime.textContent = time;
+  }
+
+  if (commandPreviewDateChip) {
+    commandPreviewDateChip.textContent = day;
+  }
+
+  if (commandPreviewIncomingText) {
+    const incomingMessage = command.trigger
+      ? `${String(command.trigger).trim()}${mediaUrl ? ' https://example.com/link' : ''}`
+      : '!command';
+    commandPreviewIncomingText.textContent = incomingMessage;
+  }
+
+  if (commandPreviewIncomingTime) {
+    commandPreviewIncomingTime.textContent = time;
+  }
+
+  if (commandPreviewOutgoingTime) {
+    commandPreviewOutgoingTime.textContent = `${time} ✓✓`;
+  }
+
   if (commandPreviewTitle) {
     commandPreviewTitle.textContent = command.trigger || 'Command Preview';
   }
@@ -1396,7 +1443,6 @@ function openCommandPreviewModal(command) {
   if (commandPreviewActionBtn) {
     commandPreviewActionBtn.onclick = () => {
       closeCommandPreviewModal();
-      fillCommandForm(command);
     };
   }
 
@@ -1416,6 +1462,41 @@ document.querySelectorAll('.btn-preview-command').forEach((button) => {
   });
 });
 
+document.querySelectorAll('.btn-edit-command').forEach((button) => {
+  button.addEventListener('click', () => {
+    const trigger = button.dataset.trigger;
+    if (!trigger) return;
+
+    const command = commandsByTrigger.get(trigger);
+    if (!command) return;
+
+    fillCommandForm(command);
+  });
+});
+
+document.querySelectorAll('.btn-delete-command').forEach((button) => {
+  button.addEventListener('click', async () => {
+    const trigger = String(button.dataset.trigger || '').trim();
+    if (!trigger) return;
+
+    const confirmDelete = window.confirm(`Delete command ${trigger}?`);
+    if (!confirmDelete) return;
+
+    try {
+      const response = await fetch(`/api/custom-commands/${encodeURIComponent(trigger)}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok && response.status !== 204) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete command');
+      }
+      window.location.reload();
+    } catch (error) {
+      window.alert(error.message);
+    }
+  });
+});
+
 if (commandPreviewModal) {
   commandPreviewModal.addEventListener('click', (event) => {
     if (event.target instanceof HTMLElement && event.target.dataset.closeModal === 'command-preview') {
@@ -1432,29 +1513,6 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && commandPreviewModal && !commandPreviewModal.hidden) {
     closeCommandPreviewModal();
   }
-});
-
-document.querySelectorAll('.btn-delete-command').forEach((button) => {
-  button.addEventListener('click', async () => {
-    const trigger = button.dataset.trigger;
-    if (!trigger) return;
-
-    const confirmDelete = window.confirm(`Delete command ${trigger}?`);
-    if (!confirmDelete) return;
-
-    try {
-      const response = await fetch(`/api/custom-commands/${encodeURIComponent(trigger)}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to delete command');
-      }
-      window.location.reload();
-    } catch (error) {
-      window.alert(error.message);
-    }
-  });
 });
 
 const clearDeletedMessagesBtn = document.getElementById('clearDeletedMessagesBtn');

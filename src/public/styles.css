@@ -218,26 +218,31 @@ button {
   position: sticky;
   top: 0;
   z-index: 10;
-  height: 56px;
-  background: color-mix(in srgb, var(--background) 85%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--border);
+  height: 64px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--background) 94%, transparent) 0%,
+    color-mix(in srgb, var(--background) 88%, transparent) 100%
+  );
+  backdrop-filter: blur(12px);
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border) 78%, transparent);
 }
 
 .top-nav-inner {
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 24px;
+  gap: 14px;
+  padding: 0 32px;
 }
 
 .icon-btn {
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 0;
+  background: transparent;
   color: var(--foreground);
   display: none;
   align-items: center;
@@ -253,8 +258,7 @@ button {
 }
 
 .icon-btn:hover {
-  background: var(--primary-soft);
-  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: transparent;
   color: var(--primary);
 }
 
@@ -268,6 +272,11 @@ button {
   min-width: 0;
   display: flex;
   align-items: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
 }
 
 .top-nav-title-wrap p {
@@ -295,28 +304,46 @@ button {
 }
 
 .top-nav-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
 }
 
 .top-nav-breadcrumb {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 13px;
   color: var(--muted-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.top-nav-breadcrumb .crumb {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-nav-breadcrumb .crumb#breadcrumbRoot {
+  color: color-mix(in srgb, var(--muted-foreground) 88%, var(--foreground));
+}
+
+.top-nav-breadcrumb .crumb#breadcrumbPage {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
 .top-nav-breadcrumb .crumb-sep {
-  opacity: 0.7;
+  opacity: 0.55;
 }
 
 .top-nav-breadcrumb .crumb.is-current {
   color: var(--foreground);
   font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--primary-soft);
 }
 
 .container {
@@ -523,20 +550,18 @@ html.has-route-hash .page[data-page] {
 
 .qr-instructions {
   margin: 4px auto 0;
-  padding-left: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding-left: 20px;
   font-size: 12.5px;
   color: var(--muted-foreground);
   align-self: center;
-  text-align: center;
-  list-style-position: inside;
+  text-align: left;
+  list-style-position: outside;
   max-width: 420px;
 }
 
 .qr-instructions li {
   line-height: 1.4;
+  margin-bottom: 4px;
 }
 
 .qr-instructions strong {
@@ -979,6 +1004,24 @@ tbody tr:hover {
   min-width: 180px;
 }
 
+.command-list-table th,
+.command-list-table td {
+  text-align: center;
+}
+
+.command-list-table .command-content-cell {
+  min-width: 140px;
+}
+
+.command-action-cell {
+  min-width: 170px;
+  white-space: nowrap;
+}
+
+.command-action-cell .btn + .btn {
+  margin-left: 8px;
+}
+
 /* ---------- Modal ---------- */
 
 .modal[hidden] {
@@ -1152,6 +1195,60 @@ tbody tr:hover {
 
 .wa-chat-conversation {
   padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wa-date-chip {
+  margin: 0 auto 2px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(209, 241, 247, 0.95);
+  border: 1px solid rgba(59, 104, 114, 0.24);
+  color: #486169;
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+}
+
+.wa-user-bubble {
+  margin-right: auto;
+  width: min(100%, 320px);
+  background: #fff;
+  border-radius: 6px;
+  border-top-left-radius: 2px;
+  padding: 8px 9px 6px;
+  color: #111b21;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+  position: relative;
+}
+
+.wa-user-bubble::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -7px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 10px 10px 0;
+  border-color: transparent #ffffff transparent transparent;
+}
+
+.wa-user-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.wa-incoming-time {
+  display: block;
+  margin-top: 4px;
+  text-align: right;
+  color: rgba(84, 101, 111, 0.88);
+  font-size: 10.5px;
 }
 
 .wa-preview-bubble {
@@ -1274,7 +1371,7 @@ tbody tr:hover {
   display: block;
   margin-top: 6px;
   text-align: right;
-  color: rgba(7, 40, 35, 0.66);
+  color: rgba(7, 40, 35, 0.7);
   font-size: 10.5px;
 }
 
@@ -1348,6 +1445,23 @@ tbody tr:hover {
   padding: 10px 14px;
   color: #8a8f93;
   font-size: 13px;
+}
+
+@media (max-width: 560px) {
+  .wa-chat-window {
+    min-height: 420px;
+  }
+
+  .wa-user-bubble,
+  .wa-preview-bubble {
+    width: min(100%, 300px);
+  }
+
+  .wa-status-icons,
+  .wa-header-actions {
+    gap: 7px;
+    font-size: 13px;
+  }
 }
 
 .wa-composer-send {
@@ -1427,6 +1541,10 @@ tbody tr:hover {
     padding: 8px;
   }
 
+  .top-nav {
+    height: 60px;
+  }
+
   .container {
     padding: 20px;
     gap: 20px;
@@ -1434,6 +1552,12 @@ tbody tr:hover {
 
   .top-nav-inner {
     padding: 0 20px;
+    gap: 10px;
+  }
+
+  .top-nav-title-wrap {
+    min-height: 38px;
+    padding: 0 10px;
   }
 
   .card-header,

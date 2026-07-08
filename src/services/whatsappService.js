@@ -116,6 +116,89 @@ function sanitizeFileName(value, fallback) {
   return clean || fallback;
 }
 
+function isHttpUrl(value) {
+  return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+}
+
+function extractDownloadUrlFromPayload(data) {
+  if (!data || typeof data !== 'object') return '';
+
+  const candidates = [
+    data?.downloadURL,
+    data?.download_url,
+    data?.dl,
+    data?.url,
+    data?.result?.url,
+    data?.result?.download,
+    data?.result?.dl,
+    data?.result?.mp3,
+    data?.result?.mp4,
+    data?.result?.audio,
+    data?.result?.video,
+    data?.data?.url,
+    data?.data?.download,
+    data?.data?.download_url,
+    data?.data?.dl,
+    data?.data?.mp3,
+    data?.data?.mp4,
+  ];
+
+  for (const candidate of candidates) {
+    if (isHttpUrl(candidate)) return String(candidate).trim();
+  }
+
+  return '';
+}
+
+function extractAudioDownloadUrlFromPayload(data) {
+  if (!data || typeof data !== 'object') return '';
+
+  const candidates = [
+    data?.audio,
+    data?.audioUrl,
+    data?.audio_url,
+    data?.mp3,
+    data?.result?.audio,
+    data?.result?.audioUrl,
+    data?.result?.audio_url,
+    data?.result?.dl_audio,
+    data?.result?.mp3,
+    data?.result?.download?.audio,
+    data?.result?.download?.mp3,
+    data?.data?.audio,
+    data?.data?.audioUrl,
+    data?.data?.audio_url,
+    data?.data?.dl_audio,
+    data?.data?.mp3,
+    data?.data?.download?.audio,
+    data?.data?.download?.mp3,
+  ];
+
+  for (const candidate of candidates) {
+    if (isHttpUrl(candidate)) return String(candidate).trim();
+  }
+
+  return extractDownloadUrlFromPayload(data);
+}
+
+function extractTitleFromPayload(data) {
+  if (!data || typeof data !== 'object') return '';
+
+  const candidates = [
+    data?.title,
+    data?.result?.title,
+    data?.data?.title,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return '';
+}
+
 class WhatsAppService {
   constructor() {
     this.sock = null;
@@ -372,7 +455,7 @@ class WhatsAppService {
       return `${normalizedGroup}@g.us`;
     }
 
-    if (rawTarget.endsWith('@s.whatsapp.net')) {
+    if (rawTarget.includes('@')) {
       return rawTarget;
     }
 
@@ -412,7 +495,7 @@ class WhatsAppService {
     }
 
     let chatId = this.buildChatId(targetType, target);
-    if (targetType === 'personal') {
+    if (targetType === 'personal' && chatId.endsWith('@s.whatsapp.net')) {
       const result = await this.sock.onWhatsApp(chatId);
       if (!Array.isArray(result) || !result[0] || !result[0].exists) {
         throw new Error('Destination number is not registered on WhatsApp');
@@ -536,10 +619,16 @@ class WhatsAppService {
         throw new Error('Link YouTube tidak valid. Gunakan link video, bukan playlist.');
       }
 
-      const info = await ytSearch({ videoId: parsed.videoId });
+      let info = null;
+      try {
+        info = await ytSearch({ videoId: parsed.videoId });
+      } catch (error) {
+        // Metadata lookup can fail even when the video URL is valid.
+      }
+
       return {
         url: parsed.canonicalUrl,
-        title: info?.title || 'YouTube Audio',
+        title: info?.title || `YouTube ${parsed.videoId}`,
         thumbnail: info?.thumbnail || '',
       };
     }
@@ -561,7 +650,7 @@ class WhatsAppService {
     for (const provider of providers) {
       try {
         const result = await provider();
-        if (result?.url) return result;
+        if (isHttpUrl(result?.url)) return { ...result, url: String(result.url).trim() };
       } catch (error) {
         console.log(`[WA] Provider failed: ${error.message}`);
       }
@@ -582,30 +671,34 @@ class WhatsAppService {
             `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(target.url)}&format=mp3`,
             40000
           );
-          return { url: data?.downloadURL, title: data?.title };
+          return { url: extractAudioDownloadUrlFromPayload(data), title: extractTitleFromPayload(data) };
         },
         async () => {
           const data = await fetchJsonWithTimeout(
             `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(target.url)}`,
             40000
           );
-          return { url: data?.data?.download_url, title: data?.data?.title };
+          return { url: extractAudioDownloadUrlFromPayload(data), title: extractTitleFromPayload(data) };
         },
         async () => {
           const data = await fetchJsonWithTimeout(
             `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url=${encodeURIComponent(target.url)}`,
             40000
           );
-          return { url: data?.dl, title: data?.title };
+          return { url: extractAudioDownloadUrlFromPayload(data), title: extractTitleFromPayload(data) };
         },
       ];
 
       if (target.thumbnail) {
-        await this.sock.sendMessage(
-          chatId,
-          { image: { url: target.thumbnail }, caption: `🎵 ${target.title}\n⏳ Sedang menyiapkan audio...` },
-          { quoted: message }
-        );
+        try {
+          await this.sock.sendMessage(
+            chatId,
+            { image: { url: target.thumbnail }, caption: `🎵 ${target.title}\n⏳ Sedang menyiapkan audio...` },
+            { quoted: message }
+          );
+        } catch (error) {
+          console.log('[WA] Thumbnail preview skipped:', error.message);
+        }
       }
 
       const picked = await this.resolveDownloadFromProviders(providers);
@@ -621,20 +714,36 @@ class WhatsAppService {
       const response = await fetchWithTimeout(picked.url, {}, 120000);
       if (!response.ok) throw new Error(`Audio download failed (HTTP ${response.status})`);
 
-      const contentType = response.headers.get('content-type') || 'audio/mpeg';
       const buffer = Buffer.from(await response.arrayBuffer());
+      if (!buffer.length) {
+        throw new Error('Audio kosong dari provider, coba lagi.');
+      }
       const title = sanitizeFileName(picked.title || target.title, 'audio');
 
-      await this.sock.sendMessage(
-        chatId,
-        {
-          audio: buffer,
-          mimetype: contentType.includes('audio/') ? contentType : 'audio/mpeg',
-          fileName: `${title}.mp3`,
-          ptt: false,
-        },
-        { quoted: message }
-      );
+      try {
+        await this.sock.sendMessage(
+          chatId,
+          {
+            audio: buffer,
+            mimetype: 'audio/mpeg',
+            fileName: `${title}.mp3`,
+            ptt: false,
+          },
+          { quoted: message }
+        );
+      } catch (audioSendError) {
+        console.log('[WA] Audio send failed, fallback to document:', audioSendError.message);
+        await this.sock.sendMessage(
+          chatId,
+          {
+            document: buffer,
+            mimetype: 'audio/mpeg',
+            fileName: `${title}.mp3`,
+            caption: `🎵 ${picked.title || target.title}`,
+          },
+          { quoted: message }
+        );
+      }
     } catch (error) {
       console.error('[WA] !ytmp3 error:', error.message);
       await this.sock.sendMessage(chatId, { text: `Gagal proses !ytmp3: ${error.message}` }, { quoted: message });
@@ -652,21 +761,21 @@ class WhatsAppService {
             `https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(target.url)}&format=mp4`,
             40000
           );
-          return { url: data?.downloadURL, title: data?.title };
+          return { url: extractDownloadUrlFromPayload(data), title: extractTitleFromPayload(data) };
         },
         async () => {
           const data = await fetchJsonWithTimeout(
             `https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(target.url)}`,
             40000
           );
-          return { url: data?.data?.download_url, title: data?.data?.title };
+          return { url: extractDownloadUrlFromPayload(data), title: extractTitleFromPayload(data) };
         },
         async () => {
           const data = await fetchJsonWithTimeout(
             `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(target.url)}`,
             40000
           );
-          return { url: data?.result?.mp4, title: data?.result?.title || data?.title };
+          return { url: extractDownloadUrlFromPayload(data), title: extractTitleFromPayload(data) };
         },
       ];
 
@@ -680,11 +789,26 @@ class WhatsAppService {
         return;
       }
 
+      const response = await fetchWithTimeout(picked.url, {}, 120000);
+      if (!response.ok) throw new Error(`Video download failed (HTTP ${response.status})`);
+
+      const contentLengthHeader = response.headers.get('content-length') || '0';
+      const contentLength = Number(contentLengthHeader);
+      const maxBytes = 64 * 1024 * 1024;
+      if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+        throw new Error('Ukuran video terlalu besar untuk dikirim (maks 64MB).');
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length > maxBytes) {
+        throw new Error('Ukuran video terlalu besar untuk dikirim (maks 64MB).');
+      }
+
       const title = sanitizeFileName(picked.title || target.title, 'video');
       await this.sock.sendMessage(
         chatId,
         {
-          video: { url: picked.url },
+          video: buffer,
           mimetype: 'video/mp4',
           fileName: `${title}.mp4`,
           caption: `🎬 ${picked.title || target.title}`,
@@ -1096,23 +1220,72 @@ class WhatsAppService {
       throw new Error('WhatsApp client is not ready');
     }
 
+    const normalizePersonalJid = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw.endsWith('@s.whatsapp.net')) return '';
+      const localPart = raw.split('@')[0] || '';
+      const phone = localPart.split(':')[0].replace(/\D/g, '');
+      if (!phone) return '';
+      return `${phone}@s.whatsapp.net`;
+    };
+
+    const ownJid = normalizePersonalJid(this.sock?.user?.id || '');
+    const contacts = this.store?.contacts || {};
     const chats = this.store?.chats?.all?.() || [];
-    return chats
-      .filter((chat) => {
-        const jid = String(chat?.id || '');
-        if (!jid.endsWith('@s.whatsapp.net')) return false;
-        if (jid.includes('-')) return false;
-        return true;
-      })
-      .map((chat) => {
-        const jid = String(chat.id || '');
-        const phone = this.normalizePersonalNumber(jid);
-        return {
-          id: jid,
-          name: String(chat.name || chat.notify || chat.pushName || phone || 'Unnamed'),
-          phone,
-        };
-      })
+    const merged = new Map();
+
+    for (const chat of chats) {
+      const jid = normalizePersonalJid(chat?.id || '');
+      if (!jid || jid === ownJid) continue;
+
+      const hasDirectInteraction = Boolean(
+        chat?.conversationTimestamp
+        || chat?.lastMessageRecvTimestamp
+        || chat?.lastMsgTimestamp
+      );
+      if (!hasDirectInteraction) continue;
+
+      const phone = this.normalizePersonalNumber(jid);
+      const contact = contacts[jid] || contacts[chat?.id] || null;
+      merged.set(jid, {
+        id: jid,
+        name: String(
+          chat?.name
+          || chat?.notify
+          || chat?.pushName
+          || contact?.name
+          || contact?.notify
+          || phone
+          || 'Unnamed'
+        ),
+        phone,
+      });
+    }
+
+    try {
+      const groupsMap = await this.sock.groupFetchAllParticipating();
+      for (const group of Object.values(groupsMap || {})) {
+        const participants = Array.isArray(group?.participants) ? group.participants : [];
+
+        for (const participant of participants) {
+          const rawParticipantId = participant?.id || participant;
+          const jid = normalizePersonalJid(rawParticipantId);
+          if (!jid || jid === ownJid || merged.has(jid)) continue;
+
+          const phone = this.normalizePersonalNumber(jid);
+          const contact = contacts[jid] || contacts[rawParticipantId] || null;
+          merged.set(jid, {
+            id: jid,
+            name: String(contact?.name || contact?.notify || contact?.verifiedName || phone || 'Unnamed'),
+            phone,
+          });
+        }
+      }
+    } catch (error) {
+      console.log('[WA] Failed to enrich personal chats from groups:', error.message);
+    }
+
+    return Array.from(merged.values())
       .sort((a, b) => a.name.localeCompare(b.name, 'id'));
   }
 }
