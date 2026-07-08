@@ -52,6 +52,13 @@
               </svg>
               <span>Schedule</span>
             </a>
+            <a class="nav-item" href="#send-message">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M22 2L11 13"></path>
+                <path d="M22 2L15 22 11 13 2 9 22 2z"></path>
+              </svg>
+              <span>Send Message</span>
+            </a>
             <a class="nav-item" href="#custom-commands">
               <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 17l6-6-6-6"></path>
@@ -132,6 +139,20 @@
                       <span class="connected-icon" aria-hidden="true">✓</span>
                       <p class="connected-title">WhatsApp connected</p>
                       <p class="connected-subtitle">Session is active. QR code is not needed right now.</p>
+                      <div class="connected-details" id="waConnectedDetails" <%= waState.ready ? '' : 'hidden' %>>
+                        <p class="connected-detail-row">
+                          <span class="connected-detail-label">Name</span>
+                          <span class="connected-detail-value" id="waConnectedName"><%= waState.connectedAccount?.displayName || '-' %></span>
+                        </p>
+                        <p class="connected-detail-row">
+                          <span class="connected-detail-label">Phone</span>
+                          <span class="connected-detail-value" id="waConnectedPhone"><%= waState.connectedAccount?.phoneNumber || '-' %></span>
+                        </p>
+                        <p class="connected-detail-row">
+                          <span class="connected-detail-label">JID</span>
+                          <span class="connected-detail-value connected-detail-mono" id="waConnectedJid"><%= waState.connectedAccount?.jid || '-' %></span>
+                        </p>
+                      </div>
                     </div>
 
                     <div id="wa-qr-wrap" class="qr-wrap" <%= !waState.ready && waState.qrCodeDataUrl ? '' : 'hidden' %>>
@@ -257,9 +278,7 @@
                         <tr>
                           <th>ID</th>
                           <th>Type</th>
-                          <th>Target</th>
-                          <th>Message</th>
-                          <th>Time</th>
+                          <th>Details</th>
                           <th>Status</th>
                           <th></th>
                         </tr>
@@ -267,7 +286,7 @@
                       <tbody>
                         <% if (!schedules.length) { %>
                         <tr>
-                          <td colspan="7" class="muted">No schedules yet</td>
+                          <td colspan="5" class="muted">No schedules yet</td>
                         </tr>
                         <% } %>
 
@@ -279,10 +298,10 @@
                               <%= item.targetType === 'group' ? 'group' : 'personal' %>
                             </span>
                           </td>
-                          <td><%= item.targetValue %></td>
-                          <td class="cell-message"><%= item.message %></td>
-                          <td class="js-local-datetime" data-iso="<%= item.scheduleAt %>">
-                            <%= dayjs(item.scheduleAt).format('DD MMM YYYY HH:mm:ss') %>
+                          <td class="schedule-details-cell">
+                            <div class="schedule-detail-actions">
+                              <button class="btn btn-outline btn-sm btn-view-schedule" data-id="<%= item.id %>">View</button>
+                            </div>
                           </td>
                           <td>
                             <span class="badge badge-<%= item.status %>"><%= item.status %></span>
@@ -295,6 +314,64 @@
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="page" data-page="send-message" id="send-message" hidden>
+            <div class="grid two-cols">
+              <article class="card">
+                <div class="card-header">
+                  <h2 class="card-title">Send Message</h2>
+                  <p class="card-description">Send WhatsApp message instantly from dashboard</p>
+                </div>
+                <div class="card-content">
+                  <form id="send-form">
+                    <div class="field">
+                      <label for="sendTargetType">Target Type</label>
+                      <select id="sendTargetType" name="targetType" required>
+                        <option value="group" selected>Group Chat</option>
+                        <option value="personal">Personal Chat</option>
+                      </select>
+                    </div>
+
+                    <div class="field" id="sendTargetValueField">
+                      <label for="sendTargetValue" id="sendTargetValueLabel">Group ID (example: 1203630xxxx@g.us)</label>
+                      <input id="sendTargetValue" name="targetValue" required />
+                      <p class="hint" id="sendTargetHint">You can enter 1203630xxxx only or with @g.us suffix</p>
+                    </div>
+
+                    <div class="group-tools" id="sendGroupTools">
+                      <div class="group-tools-head">
+                        <label for="sendGroupPicker">Select Group From WhatsApp Account</label>
+                        <button type="button" class="btn btn-outline btn-sm" id="sendRefreshGroupsBtn">Refresh Groups</button>
+                      </div>
+                      <select id="sendGroupPicker">
+                        <option value="">Loading group list...</option>
+                      </select>
+                      <p class="hint" id="sendGroupFetchHint">Pick a group to auto-fill the ID.</p>
+                    </div>
+
+                    <div class="group-tools" id="sendPersonalChatTools" hidden>
+                      <div class="group-tools-head">
+                        <label for="sendPersonalChatPicker">Generate From Current Personal Chats</label>
+                        <button type="button" class="btn btn-outline btn-sm" id="sendRefreshPersonalChatsBtn">Refresh Chats</button>
+                      </div>
+                      <select id="sendPersonalChatPicker">
+                        <option value="">Loading personal chat list...</option>
+                      </select>
+                      <p class="hint" id="sendPersonalChatFetchHint">Pick a personal chat to auto-fill the destination ID.</p>
+                    </div>
+
+                    <div class="field">
+                      <label for="sendMessageText">Message</label>
+                      <textarea id="sendMessageText" name="message" rows="4" required></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block">Send Now</button>
+                  </form>
+                  <p id="send-feedback" class="feedback"></p>
                 </div>
               </article>
             </div>
@@ -586,7 +663,31 @@
       </div>
     </div>
 
+    <div class="modal" id="scheduleViewModal" hidden>
+      <div class="modal-backdrop" data-close-modal="schedule-view"></div>
+      <div class="modal-panel schedule-view-modal-panel" role="dialog" aria-modal="true" aria-labelledby="scheduleViewModalTitle">
+        <button type="button" class="modal-close" id="closeScheduleViewModal" aria-label="Close schedule details">&times;</button>
+        <div class="card-content">
+          <h3 class="card-title" id="scheduleViewModalTitle">Schedule Details</h3>
+          <div class="schedule-modal-grid">
+            <p class="schedule-modal-row"><span class="schedule-modal-label">ID</span><span class="schedule-modal-value" id="scheduleModalId">-</span></p>
+            <p class="schedule-modal-row"><span class="schedule-modal-label">Type</span><span class="schedule-modal-value" id="scheduleModalType">-</span></p>
+            <p class="schedule-modal-row"><span class="schedule-modal-label">Target</span><span class="schedule-modal-value schedule-modal-mono" id="scheduleModalTarget">-</span></p>
+            <p class="schedule-modal-row"><span class="schedule-modal-label">Time</span><span class="schedule-modal-value" id="scheduleModalTime">-</span></p>
+            <p class="schedule-modal-row"><span class="schedule-modal-label">Status</span><span class="schedule-modal-value" id="scheduleModalStatus">-</span></p>
+            <p class="schedule-modal-row schedule-modal-row-message"><span class="schedule-modal-label">Message</span><span class="schedule-modal-value" id="scheduleModalMessage">-</span></p>
+          </div>
+          <p class="feedback" id="scheduleModalFeedback"></p>
+          <div class="schedule-modal-actions">
+            <button type="button" class="btn btn-outline" id="scheduleModalCloseBtn">Close</button>
+            <button type="button" class="btn btn-outline btn-delete-modal" id="scheduleModalDeleteBtn">Delete Schedule</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script>
+      window.__SCHEDULES__ = <%- JSON.stringify(schedules) %>;
       window.__CUSTOM_COMMANDS__ = <%- JSON.stringify(customCommands) %>;
     </script>
     <script src="/public/app.js"></script>

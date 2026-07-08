@@ -120,6 +120,26 @@ function isHttpUrl(value) {
   return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
 }
 
+function normalizeConnectedJid(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const atIndex = raw.indexOf('@');
+  if (atIndex === -1) return raw;
+
+  const localPart = raw.slice(0, atIndex);
+  const domain = raw.slice(atIndex + 1);
+  const cleanLocal = localPart.split(':')[0] || localPart;
+  return `${cleanLocal}@${domain}`;
+}
+
+function extractPhoneFromJid(value) {
+  const normalized = normalizeConnectedJid(value);
+  if (!normalized) return '';
+  const local = normalized.split('@')[0] || '';
+  return local.replace(/\D/g, '');
+}
+
 function extractDownloadUrlFromPayload(data) {
   if (!data || typeof data !== 'object') return '';
 
@@ -395,11 +415,21 @@ class WhatsAppService {
   }
 
   getConnectionState() {
+    const rawUser = this.sock?.user || null;
+    const jid = normalizeConnectedJid(rawUser?.id || rawUser?.jid || '');
+    const phoneNumber = extractPhoneFromJid(jid);
+    const displayName = String(rawUser?.name || rawUser?.verifiedName || '').trim();
+
     return {
       ready: this.ready,
       status: this.lastStatus,
       qrCodeDataUrl: this.qrCodeDataUrl,
       pairingCode: this.pairingCode,
+      connectedAccount: {
+        jid,
+        phoneNumber,
+        displayName,
+      },
     };
   }
 

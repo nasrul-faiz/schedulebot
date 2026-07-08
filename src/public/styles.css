@@ -23,6 +23,9 @@
   --warning-bg: rgba(255, 212, 0, 0.14);
   --danger: #f4212e;
   --danger-bg: rgba(244, 33, 46, 0.16);
+  --motion-fast: 140ms;
+  --motion-normal: 220ms;
+  --motion-slow: 320ms;
 }
 
 [data-theme="light"] {
@@ -275,8 +278,8 @@ button {
   min-height: 42px;
   padding: 0 14px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
-  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  border: 0;
+  background: transparent;
 }
 
 .top-nav-title-wrap p {
@@ -288,18 +291,18 @@ button {
   margin-left: auto;
 }
 
-.theme-icon {
+.theme-toggle-btn .theme-icon {
   width: 17px;
   height: 17px;
   display: none;
 }
 
-[data-theme="dark"] .theme-icon-sun,
-:root:not([data-theme]) .theme-icon-sun {
+[data-theme="dark"] .theme-toggle-btn .theme-icon-moon,
+:root:not([data-theme]) .theme-toggle-btn .theme-icon-moon {
   display: block;
 }
 
-[data-theme="light"] .theme-icon-moon {
+[data-theme="light"] .theme-toggle-btn .theme-icon-sun {
   display: block;
 }
 
@@ -393,6 +396,23 @@ button {
   gap: 28px;
 }
 
+.page.page-animate .card,
+.page.page-animate .method-tabs,
+.page.page-animate .table-wrap {
+  animation: pageSectionIn var(--motion-normal) ease both;
+}
+
+@keyframes pageSectionIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .page[hidden] {
   display: none;
 }
@@ -480,6 +500,13 @@ html.has-route-hash .page[data-page] {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease,
+    transform var(--motion-fast) ease;
+}
+
+.card:hover {
+  border-color: color-mix(in srgb, var(--primary) 20%, var(--border));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
 .card-header {
@@ -615,6 +642,45 @@ body.wa-ready #wa-connected-wrap {
   text-align: center;
   color: var(--muted-foreground);
   font-size: 12.5px;
+}
+
+.connected-details {
+  width: min(100%, 420px);
+  margin-top: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+}
+
+.connected-detail-row {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.connected-detail-row + .connected-detail-row {
+  margin-top: 6px;
+}
+
+.connected-detail-label {
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.connected-detail-value {
+  color: var(--foreground);
+  font-weight: 600;
+  text-align: right;
+  word-break: break-word;
+}
+
+.connected-detail-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11.5px;
 }
 
 body.wa-ready #wa-qr-wrap,
@@ -845,6 +911,41 @@ code {
   white-space: nowrap;
 }
 
+.btn[disabled] {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn.is-loading {
+  pointer-events: none;
+  position: relative;
+  font-size: 0;
+}
+
+.btn.is-loading::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, currentColor 40%, transparent);
+  border-top-color: currentColor;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin-left: -7px;
+  margin-top: -7px;
+  animation: buttonSpin 0.8s linear infinite;
+}
+
+@keyframes buttonSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .btn-primary {
   background: var(--primary);
   color: var(--primary-foreground);
@@ -920,6 +1021,7 @@ code {
   min-height: 18px;
   margin: 10px 0 0;
   font-size: 12.5px;
+  transition: color var(--motion-fast) ease, opacity var(--motion-fast) ease;
 }
 
 .feedback.is-success {
@@ -982,6 +1084,14 @@ tbody tr:hover {
   text-align: right;
 }
 
+.schedule-details-cell {
+  min-width: 250px;
+}
+
+.schedule-detail-actions {
+  display: inline-flex;
+}
+
 .deleted-messages-table .deleted-content-cell {
   max-width: 520px;
   white-space: normal;
@@ -1038,6 +1148,30 @@ tbody tr:hover {
   padding: 24px;
 }
 
+.modal:not([hidden]) .modal-backdrop {
+  animation: modalFadeIn var(--motion-normal) ease both;
+}
+
+.modal:not([hidden]) .modal-panel {
+  animation: modalPopIn var(--motion-normal) ease both;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .modal-backdrop {
   position: absolute;
   inset: 0;
@@ -1058,6 +1192,68 @@ tbody tr:hover {
 
 .command-preview-viewport {
   width: 100%;
+}
+
+.schedule-view-modal-panel {
+  width: min(100%, 560px);
+  padding: 18px;
+  border-radius: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 26px 52px rgba(0, 0, 0, 0.42);
+}
+
+.schedule-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.schedule-modal-row {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: start;
+  gap: 10px;
+}
+
+.schedule-modal-label {
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+
+.schedule-modal-value {
+  color: var(--foreground);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.schedule-modal-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+}
+
+.schedule-modal-row-message .schedule-modal-value {
+  white-space: pre-wrap;
+}
+
+.schedule-modal-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-delete-modal {
+  border-color: color-mix(in srgb, var(--danger) 46%, var(--border));
+  color: var(--danger);
+}
+
+.btn-delete-modal:hover {
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 70%, var(--border));
+  color: var(--danger);
 }
 
 .command-preview-panel .wa-preview-card {

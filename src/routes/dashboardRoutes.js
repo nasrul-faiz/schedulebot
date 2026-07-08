@@ -182,6 +182,35 @@ function createDashboardRouter(whatsappService) {
     }
   });
 
+  router.post('/api/messages/send', async (req, res) => {
+    try {
+      const { targetType, targetValue, message } = req.body || {};
+      const normalizedTargetType =
+        targetType === 'personal-manual' || targetType === 'personal-chat' ? 'personal' : targetType;
+
+      if (!normalizedTargetType || !targetValue || !message) {
+        return res.status(400).json({
+          error: 'targetType, targetValue, and message are required',
+        });
+      }
+
+      if (!['personal', 'group'].includes(normalizedTargetType)) {
+        return res.status(400).json({ error: 'targetType must be personal or group' });
+      }
+
+      await whatsappService.sendMessage(
+        normalizedTargetType,
+        String(targetValue).trim(),
+        String(message).trim()
+      );
+
+      return res.status(200).json({ ok: true });
+    } catch (error) {
+      const status = error.message === 'WhatsApp client is not ready' ? 409 : 400;
+      return res.status(status).json({ error: error.message || 'Failed to send message' });
+    }
+  });
+
   router.delete('/api/schedules/:id', async (req, res, next) => {
     try {
       const id = Number(req.params.id);

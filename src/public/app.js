@@ -14,6 +14,10 @@ const personalChatFetchHint = document.getElementById('personalChatFetchHint');
 const refreshPersonalChatsBtn = document.getElementById('refreshPersonalChatsBtn');
 const waStatus = document.getElementById('wa-status');
 const waConnectedWrap = document.getElementById('wa-connected-wrap');
+const waConnectedDetails = document.getElementById('waConnectedDetails');
+const waConnectedName = document.getElementById('waConnectedName');
+const waConnectedPhone = document.getElementById('waConnectedPhone');
+const waConnectedJid = document.getElementById('waConnectedJid');
 const waQrWrap = document.getElementById('wa-qr-wrap');
 const waQrEmpty = document.getElementById('wa-qr-empty');
 const waQrCaption = document.getElementById('wa-qr-caption');
@@ -26,6 +30,21 @@ const scheduleTabCreate = document.getElementById('scheduleTabCreate');
 const scheduleTabList = document.getElementById('scheduleTabList');
 const scheduleCreatePanel = document.getElementById('schedule-create-panel');
 const scheduleListPanel = document.getElementById('schedule-list-panel');
+const sendForm = document.getElementById('send-form');
+const sendFeedback = document.getElementById('send-feedback');
+const sendTargetTypeInput = document.getElementById('sendTargetType');
+const sendTargetValueField = document.getElementById('sendTargetValueField');
+const sendTargetValueLabel = document.getElementById('sendTargetValueLabel');
+const sendTargetHint = document.getElementById('sendTargetHint');
+const sendTargetValueInput = document.getElementById('sendTargetValue');
+const sendGroupTools = document.getElementById('sendGroupTools');
+const sendGroupPicker = document.getElementById('sendGroupPicker');
+const sendGroupFetchHint = document.getElementById('sendGroupFetchHint');
+const sendRefreshGroupsBtn = document.getElementById('sendRefreshGroupsBtn');
+const sendPersonalChatTools = document.getElementById('sendPersonalChatTools');
+const sendPersonalChatPicker = document.getElementById('sendPersonalChatPicker');
+const sendPersonalChatFetchHint = document.getElementById('sendPersonalChatFetchHint');
+const sendRefreshPersonalChatsBtn = document.getElementById('sendRefreshPersonalChatsBtn');
 const commandTabCreate = document.getElementById('commandTabCreate');
 const commandTabList = document.getElementById('commandTabList');
 const commandCreatePanel = document.getElementById('command-create-panel');
@@ -49,14 +68,23 @@ const navItems = Array.from(document.querySelectorAll('.sidebar-nav .nav-item'))
 const pages = Array.from(document.querySelectorAll('.page[data-page]'));
 const DEFAULT_PAGE_HASH = '#account';
 const THEME_STORAGE_KEY = 'schedulebot-theme';
+const schedulesById = new Map(
+  (Array.isArray(window.__SCHEDULES__) ? window.__SCHEDULES__ : []).map((item) => [
+    String(item.id),
+    item,
+  ])
+);
 
 let hasLoadedGroups = false;
 let hasLoadedPersonalChats = false;
+let hasLoadedSendGroups = false;
+let hasLoadedSendPersonalChats = false;
 let isWhatsAppReady = false;
 
 const PAGE_TITLE_MAP = {
   account: 'Account',
   schedule: 'Schedule',
+  'send-message': 'Send Message',
   'custom-commands': 'Custom Command',
   'deleted-messages': 'Deleted Messages',
 };
@@ -100,6 +128,47 @@ function updateTopBreadcrumb() {
   if (breadcrumbSectionSep) {
     breadcrumbSectionSep.hidden = !sectionTitle;
   }
+}
+
+function formatConnectedPhone(value) {
+  const digits = String(value || '').replace(/\D+/g, '');
+  if (!digits) return '-';
+
+  // Prefer an international-style display while keeping unknown formats readable.
+  if (digits.startsWith('60')) {
+    const rest = digits.slice(2);
+    if (rest.length >= 9) {
+      return `+60 ${rest.slice(0, 2)}-${rest.slice(2, 5)} ${rest.slice(5)}`;
+    }
+    return `+60 ${rest}`.trim();
+  }
+
+  return `+${digits}`;
+}
+
+function setButtonLoading(button, isLoading, loadingLabel) {
+  if (!button) return;
+
+  if (isLoading) {
+    if (!button.dataset.originalLabel) {
+      button.dataset.originalLabel = button.textContent || '';
+    }
+    if (loadingLabel) {
+      button.dataset.loadingLabel = loadingLabel;
+      button.setAttribute('aria-label', loadingLabel);
+    }
+    button.classList.add('is-loading');
+    button.disabled = true;
+    return;
+  }
+
+  button.classList.remove('is-loading');
+  if (button.dataset.originalLabel) {
+    button.textContent = button.dataset.originalLabel;
+    delete button.dataset.originalLabel;
+  }
+  delete button.dataset.loadingLabel;
+  button.removeAttribute('aria-label');
 }
 
 function applyTheme(theme) {
@@ -161,6 +230,14 @@ function showPageByHash(hash) {
 
   pages.forEach((page) => {
     page.hidden = page !== pageToShow;
+    if (page !== pageToShow) {
+      page.classList.remove('page-animate');
+    }
+  });
+
+  pageToShow.classList.remove('page-animate');
+  window.requestAnimationFrame(() => {
+    pageToShow.classList.add('page-animate');
   });
 
   setActiveNavItemByHash(`#${pageToShow.getAttribute('data-page')}`);
@@ -201,6 +278,12 @@ function renderWhatsAppState(state) {
   document.body.classList.toggle('wa-ready', isReady);
   const statusText = String(state.status || (isReady ? 'WhatsApp connected' : 'Initializing...'));
   const qrCodeDataUrl = typeof state.qrCodeDataUrl === 'string' ? state.qrCodeDataUrl : '';
+  const connectedAccount = state.connectedAccount && typeof state.connectedAccount === 'object'
+    ? state.connectedAccount
+    : {};
+  const connectedNameText = String(connectedAccount.displayName || '').trim() || '-';
+  const connectedPhoneText = formatConnectedPhone(connectedAccount.phoneNumber);
+  const connectedJidText = String(connectedAccount.jid || '').trim() || '-';
 
   waStatus.textContent = statusText;
   waStatus.classList.remove('status-ok', 'status-warn');
@@ -208,6 +291,19 @@ function renderWhatsAppState(state) {
 
   if (waConnectedWrap) {
     waConnectedWrap.hidden = !isReady;
+  }
+
+  if (waConnectedDetails) {
+    waConnectedDetails.hidden = !isReady;
+  }
+  if (waConnectedName) {
+    waConnectedName.textContent = connectedNameText;
+  }
+  if (waConnectedPhone) {
+    waConnectedPhone.textContent = connectedPhoneText;
+  }
+  if (waConnectedJid) {
+    waConnectedJid.textContent = connectedJidText;
   }
 
   if (methodTabPhone) {
@@ -403,7 +499,7 @@ if (requestPairingBtn) {
       return;
     }
 
-    requestPairingBtn.disabled = true;
+    setButtonLoading(requestPairingBtn, true, 'Requesting pairing code');
     if (pairingFeedback) {
       pairingFeedback.textContent = 'Requesting pairing code...';
       pairingFeedback.style.color = '#5d645d';
@@ -436,6 +532,7 @@ if (requestPairingBtn) {
         pairingFeedback.style.color = '#b42318';
       }
     } finally {
+      setButtonLoading(requestPairingBtn, false);
       requestPairingBtn.disabled = isWhatsAppReady;
     }
   });
@@ -465,6 +562,12 @@ function setGroupHint(text, color = '#5d645d') {
   groupFetchHint.style.color = color;
 }
 
+function setSendGroupHint(text, color = '#5d645d') {
+  if (!sendGroupFetchHint) return;
+  sendGroupFetchHint.textContent = text;
+  sendGroupFetchHint.style.color = color;
+}
+
 function setGroupPickerOptions(groups) {
   if (!groupPicker) return;
 
@@ -480,10 +583,31 @@ function setGroupPickerOptions(groups) {
   groupPicker.innerHTML = baseOption + optionHtml;
 }
 
+function setSendGroupPickerOptions(groups) {
+  if (!sendGroupPicker) return;
+
+  const baseOption = '<option value="">Select a group...</option>';
+  const optionHtml = groups
+    .map((group) => {
+      const safeId = String(group.id || '').replace(/"/g, '&quot;');
+      const safeName = String(group.name || 'Untitled');
+      return `<option value="${safeId}">${safeName}</option>`;
+    })
+    .join('');
+
+  sendGroupPicker.innerHTML = baseOption + optionHtml;
+}
+
 function setPersonalChatHint(text, color = '#5d645d') {
   if (!personalChatFetchHint) return;
   personalChatFetchHint.textContent = text;
   personalChatFetchHint.style.color = color;
+}
+
+function setSendPersonalChatHint(text, color = '#5d645d') {
+  if (!sendPersonalChatFetchHint) return;
+  sendPersonalChatFetchHint.textContent = text;
+  sendPersonalChatFetchHint.style.color = color;
 }
 
 function setPersonalChatPickerOptions(chats) {
@@ -503,12 +627,29 @@ function setPersonalChatPickerOptions(chats) {
   personalChatPicker.innerHTML = baseOption + optionHtml;
 }
 
+function setSendPersonalChatPickerOptions(chats) {
+  if (!sendPersonalChatPicker) return;
+
+  const baseOption = '<option value="">Select a personal chat...</option>';
+  const optionHtml = chats
+    .map((chat) => {
+      const safeId = String(chat.id || '').replace(/"/g, '&quot;');
+      const safeName = String(chat.name || chat.phone || 'Unnamed');
+      const safePhone = String(chat.phone || '').trim();
+      const label = safePhone ? `${safeName} (${safePhone})` : safeName;
+      return `<option value="${safeId}">${label}</option>`;
+    })
+    .join('');
+
+  sendPersonalChatPicker.innerHTML = baseOption + optionHtml;
+}
+
 async function loadPersonalChats(force = false) {
   if (!personalChatPicker) return;
   if (hasLoadedPersonalChats && !force) return;
 
   personalChatPicker.disabled = true;
-  if (refreshPersonalChatsBtn) refreshPersonalChatsBtn.disabled = true;
+  if (refreshPersonalChatsBtn) setButtonLoading(refreshPersonalChatsBtn, true, 'Refreshing chats');
   setPersonalChatHint('Fetching personal chat list...', '#5d645d');
 
   try {
@@ -533,7 +674,49 @@ async function loadPersonalChats(force = false) {
     setPersonalChatHint(error.message, '#b42318');
   } finally {
     personalChatPicker.disabled = false;
-    if (refreshPersonalChatsBtn) refreshPersonalChatsBtn.disabled = false;
+    if (refreshPersonalChatsBtn) {
+      setButtonLoading(refreshPersonalChatsBtn, false);
+      refreshPersonalChatsBtn.disabled = false;
+    }
+  }
+}
+
+async function loadSendPersonalChats(force = false) {
+  if (!sendPersonalChatPicker) return;
+  if (hasLoadedSendPersonalChats && !force) return;
+
+  sendPersonalChatPicker.disabled = true;
+  if (sendRefreshPersonalChatsBtn) {
+    setButtonLoading(sendRefreshPersonalChatsBtn, true, 'Refreshing chats');
+  }
+  setSendPersonalChatHint('Fetching personal chat list...', '#5d645d');
+
+  try {
+    const response = await fetch('/api/whatsapp/personal-chats');
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch personal chats');
+    }
+
+    const chats = Array.isArray(data.chats) ? data.chats : [];
+    setSendPersonalChatPickerOptions(chats);
+    hasLoadedSendPersonalChats = true;
+
+    if (chats.length) {
+      setSendPersonalChatHint('Select a chat to auto-fill the destination ID.', '#5d645d');
+    } else {
+      setSendPersonalChatHint('No personal chats found on this account.', '#9f4f03');
+    }
+  } catch (error) {
+    setSendPersonalChatPickerOptions([]);
+    setSendPersonalChatHint(error.message, '#b42318');
+  } finally {
+    sendPersonalChatPicker.disabled = false;
+    if (sendRefreshPersonalChatsBtn) {
+      setButtonLoading(sendRefreshPersonalChatsBtn, false);
+      sendRefreshPersonalChatsBtn.disabled = false;
+    }
   }
 }
 
@@ -542,7 +725,7 @@ async function loadGroups(force = false) {
   if (hasLoadedGroups && !force) return;
 
   groupPicker.disabled = true;
-  if (refreshGroupsBtn) refreshGroupsBtn.disabled = true;
+  if (refreshGroupsBtn) setButtonLoading(refreshGroupsBtn, true, 'Refreshing groups');
   setGroupHint('Fetching group list...', '#5d645d');
 
   try {
@@ -567,7 +750,47 @@ async function loadGroups(force = false) {
     setGroupHint(error.message, '#b42318');
   } finally {
     groupPicker.disabled = false;
-    if (refreshGroupsBtn) refreshGroupsBtn.disabled = false;
+    if (refreshGroupsBtn) {
+      setButtonLoading(refreshGroupsBtn, false);
+      refreshGroupsBtn.disabled = false;
+    }
+  }
+}
+
+async function loadSendGroups(force = false) {
+  if (!sendGroupPicker) return;
+  if (hasLoadedSendGroups && !force) return;
+
+  sendGroupPicker.disabled = true;
+  if (sendRefreshGroupsBtn) setButtonLoading(sendRefreshGroupsBtn, true, 'Refreshing groups');
+  setSendGroupHint('Fetching group list...', '#5d645d');
+
+  try {
+    const response = await fetch('/api/whatsapp/groups');
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch group list');
+    }
+
+    const groups = Array.isArray(data.groups) ? data.groups : [];
+    setSendGroupPickerOptions(groups);
+    hasLoadedSendGroups = true;
+
+    if (groups.length) {
+      setSendGroupHint('Select a group to auto-fill the ID.', '#5d645d');
+    } else {
+      setSendGroupHint('No groups found on this account.', '#9f4f03');
+    }
+  } catch (error) {
+    setSendGroupPickerOptions([]);
+    setSendGroupHint(error.message, '#b42318');
+  } finally {
+    sendGroupPicker.disabled = false;
+    if (sendRefreshGroupsBtn) {
+      setButtonLoading(sendRefreshGroupsBtn, false);
+      sendRefreshGroupsBtn.disabled = false;
+    }
   }
 }
 
@@ -592,9 +815,35 @@ function syncTargetInputContent() {
   loadPersonalChats();
 }
 
+function syncSendTargetInputContent() {
+  if (!sendTargetTypeInput || !sendTargetValueLabel || !sendTargetHint || !sendTargetValueField) return;
+
+  if (sendTargetTypeInput.value === 'group') {
+    sendTargetValueField.hidden = false;
+    sendTargetValueLabel.textContent = 'Group ID (example: 1203630xxxx@g.us)';
+    sendTargetHint.textContent = 'You can enter 1203630xxxx only or with @g.us suffix';
+    if (sendGroupTools) sendGroupTools.hidden = false;
+    if (sendPersonalChatTools) sendPersonalChatTools.hidden = true;
+    loadSendGroups();
+    return;
+  }
+
+  sendTargetValueField.hidden = false;
+  sendTargetValueLabel.textContent = 'Personal ID / Number (example: 62812xxxx@s.whatsapp.net)';
+  sendTargetHint.textContent = 'You can enter phone number only or with @s.whatsapp.net suffix';
+  if (sendGroupTools) sendGroupTools.hidden = true;
+  if (sendPersonalChatTools) sendPersonalChatTools.hidden = false;
+  loadSendPersonalChats();
+}
+
 if (targetTypeInput) {
   targetTypeInput.addEventListener('change', syncTargetInputContent);
   syncTargetInputContent();
+}
+
+if (sendTargetTypeInput) {
+  sendTargetTypeInput.addEventListener('change', syncSendTargetInputContent);
+  syncSendTargetInputContent();
 }
 
 if (sidebarMenuBtn) {
@@ -644,6 +893,22 @@ if (personalChatPicker) {
   });
 }
 
+if (sendGroupPicker) {
+  sendGroupPicker.addEventListener('change', () => {
+    const selected = String(sendGroupPicker.value || '').trim();
+    if (!sendTargetValueInput || !selected) return;
+    sendTargetValueInput.value = selected;
+  });
+}
+
+if (sendPersonalChatPicker) {
+  sendPersonalChatPicker.addEventListener('change', () => {
+    const selected = String(sendPersonalChatPicker.value || '').trim();
+    if (!sendTargetValueInput || !selected) return;
+    sendTargetValueInput.value = selected;
+  });
+}
+
 if (refreshGroupsBtn) {
   refreshGroupsBtn.addEventListener('click', () => {
     loadGroups(true);
@@ -653,6 +918,18 @@ if (refreshGroupsBtn) {
 if (refreshPersonalChatsBtn) {
   refreshPersonalChatsBtn.addEventListener('click', () => {
     loadPersonalChats(true);
+  });
+}
+
+if (sendRefreshGroupsBtn) {
+  sendRefreshGroupsBtn.addEventListener('click', () => {
+    loadSendGroups(true);
+  });
+}
+
+if (sendRefreshPersonalChatsBtn) {
+  sendRefreshPersonalChatsBtn.addEventListener('click', () => {
+    loadSendPersonalChats(true);
   });
 }
 
@@ -666,6 +943,7 @@ hydrateScheduleTimesToLocal();
 if (form) {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const submitBtn = form.querySelector('button[type="submit"]');
 
     const formData = new FormData(form);
     const selectedType = String(formData.get('targetType') || '').trim();
@@ -687,6 +965,7 @@ if (form) {
 
     feedback.textContent = 'Saving schedule...';
     feedback.style.color = '#5d645d';
+    setButtonLoading(submitBtn, true, 'Saving schedule');
 
     try {
       const response = await fetch('/api/schedules', {
@@ -708,6 +987,66 @@ if (form) {
     } catch (error) {
       feedback.textContent = error.message;
       feedback.style.color = '#b42318';
+    } finally {
+      setButtonLoading(submitBtn, false);
+    }
+  });
+}
+
+if (sendForm) {
+  sendForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submitBtn = sendForm.querySelector('button[type="submit"]');
+
+    const formData = new FormData(sendForm);
+    const payload = {
+      targetType: String(formData.get('targetType') || '').trim(),
+      targetValue: String(formData.get('targetValue') || '').trim(),
+      message: String(formData.get('message') || '').trim(),
+    };
+
+    if (!payload.targetType || !payload.targetValue || !payload.message) {
+      if (sendFeedback) {
+        sendFeedback.textContent = 'Target type, target value, and message are required.';
+        sendFeedback.style.color = '#b42318';
+      }
+      return;
+    }
+
+    if (sendFeedback) {
+      sendFeedback.textContent = 'Sending message...';
+      sendFeedback.style.color = '#5d645d';
+    }
+    setButtonLoading(submitBtn, true, 'Sending message');
+
+    try {
+      const response = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send message');
+      }
+
+      if (sendFeedback) {
+        sendFeedback.textContent = 'Message sent successfully';
+        sendFeedback.style.color = '#136f63';
+      }
+
+      const selectedType = String(sendTargetTypeInput?.value || 'group').trim();
+      sendForm.reset();
+      if (sendTargetTypeInput) sendTargetTypeInput.value = selectedType || 'group';
+      syncSendTargetInputContent();
+    } catch (error) {
+      if (sendFeedback) {
+        sendFeedback.textContent = error.message;
+        sendFeedback.style.color = '#b42318';
+      }
+    } finally {
+      setButtonLoading(submitBtn, false);
     }
   });
 }
@@ -720,6 +1059,8 @@ document.querySelectorAll('.btn-delete').forEach((button) => {
     const confirmDelete = window.confirm('Delete this schedule?');
     if (!confirmDelete) return;
 
+    setButtonLoading(button, true, 'Deleting schedule');
+
     try {
       const response = await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
       if (!response.ok) {
@@ -729,9 +1070,135 @@ document.querySelectorAll('.btn-delete').forEach((button) => {
       window.location.reload();
     } catch (error) {
       window.alert(error.message);
+      setButtonLoading(button, false);
     }
   });
 });
+
+const scheduleViewModal = document.getElementById('scheduleViewModal');
+const closeScheduleViewModalBtn = document.getElementById('closeScheduleViewModal');
+const scheduleModalId = document.getElementById('scheduleModalId');
+const scheduleModalType = document.getElementById('scheduleModalType');
+const scheduleModalTarget = document.getElementById('scheduleModalTarget');
+const scheduleModalTime = document.getElementById('scheduleModalTime');
+const scheduleModalStatus = document.getElementById('scheduleModalStatus');
+const scheduleModalMessage = document.getElementById('scheduleModalMessage');
+const scheduleModalFeedback = document.getElementById('scheduleModalFeedback');
+const scheduleModalCloseBtn = document.getElementById('scheduleModalCloseBtn');
+const scheduleModalDeleteBtn = document.getElementById('scheduleModalDeleteBtn');
+let activeScheduleModalId = '';
+
+function closeScheduleViewModal() {
+  if (!scheduleViewModal) return;
+  activeScheduleModalId = '';
+  if (scheduleModalFeedback) {
+    scheduleModalFeedback.textContent = '';
+    scheduleModalFeedback.style.color = '#5d645d';
+  }
+  if (scheduleModalDeleteBtn) {
+    setButtonLoading(scheduleModalDeleteBtn, false);
+    scheduleModalDeleteBtn.disabled = false;
+  }
+  scheduleViewModal.hidden = true;
+  document.body.style.overflow = '';
+}
+
+function openScheduleViewModal(item) {
+  if (!scheduleViewModal || !item) return;
+  activeScheduleModalId = String(item.id || '').trim();
+
+  if (scheduleModalId) scheduleModalId.textContent = String(item.id || '-');
+  if (scheduleModalType) {
+    const type = String(item.targetType || '').trim();
+    scheduleModalType.textContent = type === 'group' ? 'group' : 'personal';
+  }
+  if (scheduleModalTarget) scheduleModalTarget.textContent = String(item.targetValue || '-');
+  if (scheduleModalTime) {
+    const localTime = formatLocalDateTime(item.scheduleAt);
+    scheduleModalTime.textContent = localTime || String(item.scheduleAt || '-');
+  }
+  if (scheduleModalStatus) scheduleModalStatus.textContent = String(item.status || '-');
+  if (scheduleModalMessage) scheduleModalMessage.textContent = String(item.message || '-');
+  if (scheduleModalFeedback) {
+    scheduleModalFeedback.textContent = '';
+    scheduleModalFeedback.style.color = '#5d645d';
+  }
+  if (scheduleModalDeleteBtn) {
+    setButtonLoading(scheduleModalDeleteBtn, false);
+    scheduleModalDeleteBtn.disabled = false;
+  }
+
+  scheduleViewModal.hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+document.querySelectorAll('.btn-view-schedule').forEach((button) => {
+  button.addEventListener('click', () => {
+    const id = String(button.dataset.id || '').trim();
+    if (!id) return;
+
+    const schedule = schedulesById.get(id);
+    if (!schedule) return;
+
+    openScheduleViewModal(schedule);
+  });
+});
+
+if (scheduleViewModal) {
+  scheduleViewModal.addEventListener('click', (event) => {
+    if (event.target instanceof HTMLElement && event.target.dataset.closeModal === 'schedule-view') {
+      closeScheduleViewModal();
+    }
+  });
+}
+
+if (closeScheduleViewModalBtn) {
+  closeScheduleViewModalBtn.addEventListener('click', closeScheduleViewModal);
+}
+
+if (scheduleModalCloseBtn) {
+  scheduleModalCloseBtn.addEventListener('click', closeScheduleViewModal);
+}
+
+if (scheduleModalDeleteBtn) {
+  scheduleModalDeleteBtn.addEventListener('click', async () => {
+    if (!activeScheduleModalId) return;
+
+    const confirmDelete = window.confirm('Delete this schedule?');
+    if (!confirmDelete) return;
+
+    setButtonLoading(scheduleModalDeleteBtn, true, 'Deleting schedule');
+    if (scheduleModalFeedback) {
+      scheduleModalFeedback.textContent = 'Deleting schedule...';
+      scheduleModalFeedback.style.color = '#5d645d';
+    }
+
+    try {
+      const response = await fetch(`/api/schedules/${encodeURIComponent(activeScheduleModalId)}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok && response.status !== 204) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete schedule');
+      }
+
+      if (scheduleModalFeedback) {
+        scheduleModalFeedback.textContent = 'Schedule deleted';
+        scheduleModalFeedback.style.color = '#136f63';
+      }
+
+      setTimeout(() => window.location.reload(), 250);
+    } catch (error) {
+      if (scheduleModalFeedback) {
+        scheduleModalFeedback.textContent = error.message;
+        scheduleModalFeedback.style.color = '#b42318';
+      }
+      setButtonLoading(scheduleModalDeleteBtn, false);
+      scheduleModalDeleteBtn.disabled = false;
+    }
+  });
+}
 
 /* ---------- Custom Commands ---------- */
 
@@ -1081,6 +1548,7 @@ async function uploadCommandMediaFile(file, mediaType) {
 if (commandForm) {
   commandForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const submitBtn = commandSubmitBtn || commandForm.querySelector('button[type="submit"]');
 
     const formData = new FormData(commandForm);
     const originalTrigger = commandOriginalTrigger ? commandOriginalTrigger.value : '';
@@ -1115,6 +1583,7 @@ if (commandForm) {
     };
 
     setCommandFeedback(isEditing ? 'Updating command...' : 'Saving command...', '#5d645d');
+    setButtonLoading(submitBtn, true, isEditing ? 'Updating command' : 'Saving command');
 
     try {
       const url = isEditing
@@ -1137,6 +1606,9 @@ if (commandForm) {
       setTimeout(() => window.location.reload(), 350);
     } catch (error) {
       setCommandFeedback(error.message, '#b42318');
+    } finally {
+      setButtonLoading(submitBtn, false);
+      updateCommandSubmitState();
     }
   });
 }
@@ -1482,6 +1954,8 @@ document.querySelectorAll('.btn-delete-command').forEach((button) => {
     const confirmDelete = window.confirm(`Delete command ${trigger}?`);
     if (!confirmDelete) return;
 
+    setButtonLoading(button, true, 'Deleting command');
+
     try {
       const response = await fetch(`/api/custom-commands/${encodeURIComponent(trigger)}`, {
         method: 'DELETE',
@@ -1493,6 +1967,7 @@ document.querySelectorAll('.btn-delete-command').forEach((button) => {
       window.location.reload();
     } catch (error) {
       window.alert(error.message);
+      setButtonLoading(button, false);
     }
   });
 });
@@ -1512,6 +1987,11 @@ if (closeCommandPreviewModalBtn) {
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && commandPreviewModal && !commandPreviewModal.hidden) {
     closeCommandPreviewModal();
+    return;
+  }
+
+  if (event.key === 'Escape' && scheduleViewModal && !scheduleViewModal.hidden) {
+    closeScheduleViewModal();
   }
 });
 
@@ -1525,6 +2005,8 @@ document.querySelectorAll('.btn-delete-deleted-message').forEach((button) => {
     const confirmDelete = window.confirm('Remove this record?');
     if (!confirmDelete) return;
 
+    setButtonLoading(button, true, 'Removing record');
+
     try {
       const response = await fetch(`/api/deleted-messages/${encodeURIComponent(id)}`, {
         method: 'DELETE',
@@ -1536,6 +2018,7 @@ document.querySelectorAll('.btn-delete-deleted-message').forEach((button) => {
       window.location.reload();
     } catch (error) {
       window.alert(error.message);
+      setButtonLoading(button, false);
     }
   });
 });
@@ -1544,6 +2027,8 @@ if (clearDeletedMessagesBtn) {
   clearDeletedMessagesBtn.addEventListener('click', async () => {
     const confirmClear = window.confirm('Clear all deleted message records?');
     if (!confirmClear) return;
+
+    setButtonLoading(clearDeletedMessagesBtn, true, 'Clearing records');
 
     try {
       const response = await fetch('/api/deleted-messages', { method: 'DELETE' });
@@ -1554,6 +2039,7 @@ if (clearDeletedMessagesBtn) {
       window.location.reload();
     } catch (error) {
       window.alert(error.message);
+      setButtonLoading(clearDeletedMessagesBtn, false);
     }
   });
 }
