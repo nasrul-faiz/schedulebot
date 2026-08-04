@@ -37,6 +37,7 @@ const sendTargetValueField = document.getElementById('sendTargetValueField');
 const sendTargetValueLabel = document.getElementById('sendTargetValueLabel');
 const sendTargetHint = document.getElementById('sendTargetHint');
 const sendTargetValueInput = document.getElementById('sendTargetValue');
+const sendMessageTextInput = document.getElementById('sendMessageText');
 const sendGroupTools = document.getElementById('sendGroupTools');
 const sendGroupPicker = document.getElementById('sendGroupPicker');
 const sendGroupFetchHint = document.getElementById('sendGroupFetchHint');
@@ -45,6 +46,16 @@ const sendPersonalChatTools = document.getElementById('sendPersonalChatTools');
 const sendPersonalChatPicker = document.getElementById('sendPersonalChatPicker');
 const sendPersonalChatFetchHint = document.getElementById('sendPersonalChatFetchHint');
 const sendRefreshPersonalChatsBtn = document.getElementById('sendRefreshPersonalChatsBtn');
+const sendComplexMenuWrap = document.getElementById('sendComplexMenuWrap');
+const sendComplexMenuTrigger = document.getElementById('sendComplexMenuTrigger');
+const sendComplexMenuDropdown = document.getElementById('sendComplexMenuDropdown');
+const sendMenuToggleGroupTools = document.getElementById('sendMenuToggleGroupTools');
+const sendMenuToggleHints = document.getElementById('sendMenuToggleHints');
+const sendMenuThemeRadios = Array.from(document.querySelectorAll('input[name="sendMenuTheme"]'));
+const commandComplexMenuWrap = document.getElementById('commandComplexMenuWrap');
+const commandComplexMenuTrigger = document.getElementById('commandComplexMenuTrigger');
+const commandComplexMenuDropdown = document.getElementById('commandComplexMenuDropdown');
+const commandMenuToggleGuide = document.getElementById('commandMenuToggleGuide');
 const commandTabCreate = document.getElementById('commandTabCreate');
 const commandTabList = document.getElementById('commandTabList');
 const commandCreatePanel = document.getElementById('command-create-panel');
@@ -197,6 +208,7 @@ if (themeToggleBtn) {
   themeToggleBtn.addEventListener('click', () => {
     const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
     applyTheme(current === 'light' ? 'dark' : 'light');
+    syncSendMenuThemeState();
   });
 }
 
@@ -824,6 +836,8 @@ function syncSendTargetInputContent() {
     sendTargetHint.textContent = 'You can enter 1203630xxxx only or with @g.us suffix';
     if (sendGroupTools) sendGroupTools.hidden = false;
     if (sendPersonalChatTools) sendPersonalChatTools.hidden = true;
+    applySendMenuGroupToolsVisibility();
+    applySendMenuHintVisibility();
     loadSendGroups();
     return;
   }
@@ -833,7 +847,329 @@ function syncSendTargetInputContent() {
   sendTargetHint.textContent = 'You can enter phone number only or with @s.whatsapp.net suffix';
   if (sendGroupTools) sendGroupTools.hidden = true;
   if (sendPersonalChatTools) sendPersonalChatTools.hidden = false;
+  applySendMenuHintVisibility();
   loadSendPersonalChats();
+}
+
+function closeSendComplexMenu() {
+  if (!sendComplexMenuDropdown || !sendComplexMenuTrigger) return;
+  sendComplexMenuDropdown.hidden = true;
+  sendComplexMenuTrigger.setAttribute('aria-expanded', 'false');
+  if (sendComplexMenuWrap) {
+    sendComplexMenuWrap
+      .querySelectorAll('.complex-menu-submenu.is-open')
+      .forEach((submenu) => submenu.classList.remove('is-open'));
+  }
+}
+
+function openSendComplexMenu() {
+  if (!sendComplexMenuDropdown || !sendComplexMenuTrigger) return;
+  sendComplexMenuDropdown.hidden = false;
+  sendComplexMenuTrigger.setAttribute('aria-expanded', 'true');
+}
+
+function syncSendMenuThemeState() {
+  const currentTheme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  sendMenuThemeRadios.forEach((radio) => {
+    if (radio.value === currentTheme) {
+      radio.checked = true;
+    }
+  });
+}
+
+function applySendMenuHintVisibility() {
+  if (!sendMenuToggleHints) return;
+  const showHints = sendMenuToggleHints.checked;
+  [sendTargetHint, sendGroupFetchHint, sendPersonalChatFetchHint].forEach((node) => {
+    if (!node) return;
+    node.hidden = !showHints;
+  });
+}
+
+function applySendMenuGroupToolsVisibility() {
+  if (!sendMenuToggleGroupTools || !sendGroupTools || !sendTargetTypeInput) return;
+  if (sendTargetTypeInput.value !== 'group') return;
+  sendGroupTools.hidden = !sendMenuToggleGroupTools.checked;
+}
+
+function applySendTemplate(templateKey) {
+  if (!sendMessageTextInput) return;
+
+  const templates = {
+    'template-reminder': 'Halo, ini pengingat pembayaran pengiriman Anda. Mohon selesaikan sebelum jam 18:00 hari ini. Terima kasih.',
+    'template-arrival': 'Halo, paket Anda sudah tiba di hub terdekat. Silakan tunggu kurir kami untuk proses pengantaran.',
+    'template-promo': 'Promo hari ini: diskon ongkir hingga 20% untuk pengiriman area tertentu. Balas pesan ini untuk detail.',
+    'template-thanks': 'Terima kasih sudah menggunakan layanan kami. Jika ada kendala, balas pesan ini kapan saja.',
+  };
+
+  const selected = templates[templateKey];
+  if (!selected) return;
+  sendMessageTextInput.value = selected;
+  sendMessageTextInput.focus();
+}
+
+async function handleSendMenuAction(action) {
+  if (!action) return;
+
+  if (action === 'new-message' || action === 'clear-form') {
+    if (sendForm) {
+      const currentType = String(sendTargetTypeInput?.value || 'group').trim() || 'group';
+      sendForm.reset();
+      if (sendTargetTypeInput) sendTargetTypeInput.value = currentType;
+      syncSendTargetInputContent();
+      if (sendFeedback) {
+        sendFeedback.textContent = '';
+      }
+    }
+    closeSendComplexMenu();
+    return;
+  }
+
+  if (action === 'save-draft') {
+    if (sendFeedback) {
+      sendFeedback.textContent = 'Draft is kept in the form. Submit when ready.';
+      sendFeedback.style.color = '#5d645d';
+    }
+    closeSendComplexMenu();
+    return;
+  }
+
+  if (action.startsWith('template-')) {
+    applySendTemplate(action);
+    closeSendComplexMenu();
+    return;
+  }
+
+  if (action === 'refresh-targets') {
+    const activeType = String(sendTargetTypeInput?.value || 'group').trim();
+    if (activeType === 'group') {
+      await loadSendGroups(true);
+    } else {
+      await loadSendPersonalChats(true);
+    }
+    closeSendComplexMenu();
+    return;
+  }
+
+  if (action === 'copy-target') {
+    const target = String(sendTargetValueInput?.value || '').trim();
+    if (!target) {
+      if (sendFeedback) {
+        sendFeedback.textContent = 'Target value is empty.';
+        sendFeedback.style.color = '#b42318';
+      }
+      closeSendComplexMenu();
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(target);
+      if (sendFeedback) {
+        sendFeedback.textContent = 'Target ID copied to clipboard.';
+        sendFeedback.style.color = '#136f63';
+      }
+    } catch (error) {
+      if (sendFeedback) {
+        sendFeedback.textContent = 'Failed to copy target ID.';
+        sendFeedback.style.color = '#b42318';
+      }
+    }
+
+    closeSendComplexMenu();
+    return;
+  }
+
+  if (action === 'send-now') {
+    if (sendForm) sendForm.requestSubmit();
+    closeSendComplexMenu();
+  }
+}
+
+function closeCommandComplexMenu() {
+  if (!commandComplexMenuDropdown || !commandComplexMenuTrigger) return;
+  commandComplexMenuDropdown.hidden = true;
+  commandComplexMenuTrigger.setAttribute('aria-expanded', 'false');
+  if (commandComplexMenuWrap) {
+    commandComplexMenuWrap
+      .querySelectorAll('.complex-menu-submenu.is-open')
+      .forEach((submenu) => submenu.classList.remove('is-open'));
+  }
+}
+
+function openCommandComplexMenu() {
+  if (!commandComplexMenuDropdown || !commandComplexMenuTrigger) return;
+  commandComplexMenuDropdown.hidden = false;
+  commandComplexMenuTrigger.setAttribute('aria-expanded', 'true');
+}
+
+function applyCommandMenuGuideVisibility() {
+  const guide = document.getElementById('commandButtonsGuideHint');
+  if (!guide || !commandMenuToggleGuide) return;
+  guide.hidden = !commandMenuToggleGuide.checked;
+}
+
+async function handleCommandMenuAction(action, triggerValue) {
+  if (!action) return;
+
+  if (action === 'add-button-row') {
+    if (addButtonRowBtn) addButtonRowBtn.click();
+    closeCommandComplexMenu();
+    return;
+  }
+
+  if (action === 'focus-trigger') {
+    if (commandTriggerInput) {
+      commandTriggerInput.focus();
+      commandTriggerInput.select();
+    }
+    closeCommandComplexMenu();
+    return;
+  }
+
+  if (action === 'reset-form') {
+    resetCommandForm();
+    closeCommandComplexMenu();
+    return;
+  }
+
+  if (action === 'fill-trigger') {
+    if (commandTriggerInput) {
+      const normalized = normalizeCommandTrigger(triggerValue);
+      commandTriggerInput.value = normalized;
+      commandTriggerInput.focus();
+      updateCommandFormFlow();
+    }
+    closeCommandComplexMenu();
+  }
+}
+
+if (sendComplexMenuWrap && sendComplexMenuTrigger && sendComplexMenuDropdown) {
+  sendComplexMenuTrigger.addEventListener('click', () => {
+    const isOpen = !sendComplexMenuDropdown.hidden;
+    if (isOpen) {
+      closeSendComplexMenu();
+    } else {
+      openSendComplexMenu();
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!sendComplexMenuWrap.contains(event.target)) {
+      closeSendComplexMenu();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeSendComplexMenu();
+    }
+
+    if (event.key === 'Enter' && event.ctrlKey) {
+      const isSendPageOpen = !document.getElementById('send-message')?.hidden;
+      if (isSendPageOpen && sendForm) {
+        sendForm.requestSubmit();
+      }
+    }
+
+    if (event.key === 'Escape' && event.shiftKey) {
+      if (sendForm) {
+        const currentType = String(sendTargetTypeInput?.value || 'group').trim() || 'group';
+        sendForm.reset();
+        if (sendTargetTypeInput) sendTargetTypeInput.value = currentType;
+        syncSendTargetInputContent();
+      }
+    }
+  });
+
+  sendComplexMenuWrap.querySelectorAll('[data-submenu-toggle]').forEach((trigger) => {
+    trigger.addEventListener('click', (event) => {
+      event.preventDefault();
+      const parentSubmenu = trigger.closest('.complex-menu-submenu');
+      if (!parentSubmenu) return;
+      parentSubmenu.classList.toggle('is-open');
+    });
+  });
+
+  sendComplexMenuWrap.querySelectorAll('[data-send-menu-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const action = String(button.getAttribute('data-send-menu-action') || '').trim();
+      await handleSendMenuAction(action);
+    });
+  });
+
+  if (sendMenuToggleGroupTools) {
+    sendMenuToggleGroupTools.addEventListener('change', applySendMenuGroupToolsVisibility);
+    applySendMenuGroupToolsVisibility();
+  }
+
+  if (sendMenuToggleHints) {
+    sendMenuToggleHints.addEventListener('change', applySendMenuHintVisibility);
+    applySendMenuHintVisibility();
+  }
+
+  if (sendMenuThemeRadios.length) {
+    syncSendMenuThemeState();
+    sendMenuThemeRadios.forEach((radio) => {
+      radio.addEventListener('change', () => {
+        if (!radio.checked) return;
+
+        const selectedTheme = String(radio.value || 'system');
+        if (selectedTheme === 'system') {
+          const prefersLight = window.matchMedia
+            ? window.matchMedia('(prefers-color-scheme: light)').matches
+            : false;
+          applyTheme(prefersLight ? 'light' : 'dark');
+        } else {
+          applyTheme(selectedTheme);
+        }
+      });
+    });
+  }
+}
+
+if (commandComplexMenuWrap && commandComplexMenuTrigger && commandComplexMenuDropdown) {
+  commandComplexMenuTrigger.addEventListener('click', () => {
+    const isOpen = !commandComplexMenuDropdown.hidden;
+    if (isOpen) {
+      closeCommandComplexMenu();
+    } else {
+      openCommandComplexMenu();
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!commandComplexMenuWrap.contains(event.target)) {
+      closeCommandComplexMenu();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeCommandComplexMenu();
+    }
+  });
+
+  commandComplexMenuWrap.querySelectorAll('[data-submenu-toggle]').forEach((trigger) => {
+    trigger.addEventListener('click', (event) => {
+      event.preventDefault();
+      const parentSubmenu = trigger.closest('.complex-menu-submenu');
+      if (!parentSubmenu) return;
+      parentSubmenu.classList.toggle('is-open');
+    });
+  });
+
+  commandComplexMenuWrap.querySelectorAll('[data-command-menu-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const action = String(button.getAttribute('data-command-menu-action') || '').trim();
+      const triggerValue = String(button.getAttribute('data-trigger-value') || '').trim();
+      await handleCommandMenuAction(action, triggerValue);
+    });
+  });
+
+  if (commandMenuToggleGuide) {
+    commandMenuToggleGuide.addEventListener('change', applyCommandMenuGuideVisibility);
+    applyCommandMenuGuideVisibility();
+  }
 }
 
 if (targetTypeInput) {

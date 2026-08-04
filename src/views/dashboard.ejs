@@ -322,9 +322,127 @@
           <section class="page" data-page="send-message" id="send-message" hidden>
             <div class="grid two-cols">
               <article class="card">
-                <div class="card-header">
-                  <h2 class="card-title">Send Message</h2>
-                  <p class="card-description">Send WhatsApp message instantly from dashboard</p>
+                <div class="card-header section-head send-message-header">
+                  <div class="send-message-header-main">
+                    <h2 class="card-title">Send Message</h2>
+                    <p class="card-description">Send WhatsApp message instantly from dashboard</p>
+                  </div>
+
+                  <div class="complex-menu" id="sendComplexMenuWrap">
+                    <button
+                      type="button"
+                      class="btn btn-outline send-menu-icon-btn"
+                      id="sendComplexMenuTrigger"
+                      aria-haspopup="menu"
+                      aria-expanded="false"
+                      aria-controls="sendComplexMenuDropdown"
+                      aria-label="Open message menu"
+                      title="Message Menu"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                      </svg>
+                    </button>
+
+                    <div class="complex-menu-dropdown" id="sendComplexMenuDropdown" role="menu" hidden>
+                      <div class="complex-menu-group">
+                        <p class="complex-menu-label">File</p>
+                        <button type="button" class="complex-menu-item" data-send-menu-action="new-message">
+                          <span>New Message</span>
+                          <span class="complex-menu-shortcut">Ctrl+N</span>
+                        </button>
+                        <button type="button" class="complex-menu-item" data-send-menu-action="save-draft">
+                          <span>Save Draft</span>
+                          <span class="complex-menu-shortcut">Ctrl+S</span>
+                        </button>
+
+                        <div class="complex-menu-submenu">
+                          <button type="button" class="complex-menu-item complex-menu-sub-trigger" data-submenu-toggle>
+                            <span>Open Recent Template</span>
+                            <span class="complex-menu-caret">›</span>
+                          </button>
+                          <div class="complex-menu-subcontent" role="menu">
+                            <p class="complex-menu-label">Recent Templates</p>
+                            <button type="button" class="complex-menu-item" data-send-menu-action="template-reminder">Reminder Payment</button>
+                            <button type="button" class="complex-menu-item" data-send-menu-action="template-arrival">Parcel Arrival</button>
+
+                            <div class="complex-menu-submenu complex-menu-submenu-right">
+                              <button type="button" class="complex-menu-item complex-menu-sub-trigger" data-submenu-toggle>
+                                <span>More Templates</span>
+                                <span class="complex-menu-caret">›</span>
+                              </button>
+                              <div class="complex-menu-subcontent" role="menu">
+                                <button type="button" class="complex-menu-item" data-send-menu-action="template-promo">Promo Broadcast</button>
+                                <button type="button" class="complex-menu-item" data-send-menu-action="template-thanks">Thank You Note</button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="complex-menu-separator"></div>
+
+                      <div class="complex-menu-group">
+                        <p class="complex-menu-label">View</p>
+                        <label class="complex-menu-item complex-menu-check-item">
+                          <input type="checkbox" id="sendMenuToggleGroupTools" checked />
+                          <span>Show Group Picker</span>
+                        </label>
+                        <label class="complex-menu-item complex-menu-check-item">
+                          <input type="checkbox" id="sendMenuToggleHints" checked />
+                          <span>Show Hints</span>
+                        </label>
+
+                        <div class="complex-menu-submenu">
+                          <button type="button" class="complex-menu-item complex-menu-sub-trigger" data-submenu-toggle>
+                            <span>Theme</span>
+                            <span class="complex-menu-caret">›</span>
+                          </button>
+                          <div class="complex-menu-subcontent" role="menu">
+                            <p class="complex-menu-label">Appearance</p>
+                            <label class="complex-menu-item complex-menu-radio-item">
+                              <input type="radio" name="sendMenuTheme" value="light" />
+                              <span>Light</span>
+                            </label>
+                            <label class="complex-menu-item complex-menu-radio-item">
+                              <input type="radio" name="sendMenuTheme" value="dark" />
+                              <span>Dark</span>
+                            </label>
+                            <label class="complex-menu-item complex-menu-radio-item">
+                              <input type="radio" name="sendMenuTheme" value="system" checked />
+                              <span>System</span>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="complex-menu-separator"></div>
+
+                      <div class="complex-menu-group">
+                        <p class="complex-menu-label">Actions</p>
+                        <button type="button" class="complex-menu-item" data-send-menu-action="refresh-targets">
+                          <span>Refresh Target Lists</span>
+                        </button>
+                        <button type="button" class="complex-menu-item" data-send-menu-action="copy-target">
+                          <span>Copy Target ID</span>
+                        </button>
+                        <button type="button" class="complex-menu-item" data-send-menu-action="send-now">
+                          <span>Send Now</span>
+                          <span class="complex-menu-shortcut">Ctrl+Enter</span>
+                        </button>
+                      </div>
+
+                      <div class="complex-menu-separator"></div>
+
+                      <div class="complex-menu-group">
+                        <button type="button" class="complex-menu-item complex-menu-item-danger" data-send-menu-action="clear-form">
+                          <span>Clear Form</span>
+                          <span class="complex-menu-shortcut">Shift+Esc</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div class="card-content">
                   <form id="send-form">
@@ -345,7 +463,6 @@
                     <div class="group-tools" id="sendGroupTools">
                       <div class="group-tools-head">
                         <label for="sendGroupPicker">Select Group From WhatsApp Account</label>
-                        <button type="button" class="btn btn-outline btn-sm" id="sendRefreshGroupsBtn">Refresh Groups</button>
                       </div>
                       <select id="sendGroupPicker">
                         <option value="">Loading group list...</option>
@@ -356,7 +473,6 @@
                     <div class="group-tools" id="sendPersonalChatTools" hidden>
                       <div class="group-tools-head">
                         <label for="sendPersonalChatPicker">Generate From Current Personal Chats</label>
-                        <button type="button" class="btn btn-outline btn-sm" id="sendRefreshPersonalChatsBtn">Refresh Chats</button>
                       </div>
                       <select id="sendPersonalChatPicker">
                         <option value="">Loading personal chat list...</option>
@@ -385,9 +501,79 @@
 
             <div class="method-panel" id="command-create-panel" role="tabpanel" aria-labelledby="commandTabCreate">
               <article class="card">
-                <div class="card-header">
-                  <h2 class="card-title">Add Custom Command</h2>
-                  <p class="card-description">Auto-reply to incoming WhatsApp messages by trigger</p>
+                <div class="card-header section-head command-settings-header">
+                  <div>
+                    <h2 class="card-title">Add Custom Command</h2>
+                    <p class="card-description">Auto-reply to incoming WhatsApp messages by trigger</p>
+                  </div>
+
+                  <div class="complex-menu" id="commandComplexMenuWrap">
+                    <button
+                      type="button"
+                      class="btn btn-outline send-menu-icon-btn"
+                      id="commandComplexMenuTrigger"
+                      aria-haspopup="menu"
+                      aria-expanded="false"
+                      aria-controls="commandComplexMenuDropdown"
+                      aria-label="Open command settings"
+                      title="Command Settings"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                      </svg>
+                    </button>
+
+                    <div class="complex-menu-dropdown" id="commandComplexMenuDropdown" role="menu" hidden>
+                      <div class="complex-menu-group">
+                        <p class="complex-menu-label">Quick Fill</p>
+
+                        <div class="complex-menu-submenu">
+                          <button type="button" class="complex-menu-item complex-menu-sub-trigger" data-submenu-toggle>
+                            <span>Trigger Examples</span>
+                            <span class="complex-menu-caret">›</span>
+                          </button>
+                          <div class="complex-menu-subcontent" role="menu">
+                            <p class="complex-menu-label">Popular Triggers</p>
+                            <button type="button" class="complex-menu-item" data-command-menu-action="fill-trigger" data-trigger-value=".hello">
+                              <span>.hello</span>
+                            </button>
+                            <button type="button" class="complex-menu-item" data-command-menu-action="fill-trigger" data-trigger-value=".menu">
+                              <span>.menu</span>
+                            </button>
+                            <button type="button" class="complex-menu-item" data-command-menu-action="fill-trigger" data-trigger-value=".help">
+                              <span>.help</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="complex-menu-separator"></div>
+
+                      <div class="complex-menu-group">
+                        <p class="complex-menu-label">Form</p>
+                        <button type="button" class="complex-menu-item" data-command-menu-action="add-button-row">
+                          <span>Add Button Row</span>
+                        </button>
+                        <button type="button" class="complex-menu-item" data-command-menu-action="focus-trigger">
+                          <span>Focus Trigger Field</span>
+                        </button>
+                        <button type="button" class="complex-menu-item complex-menu-item-danger" data-command-menu-action="reset-form">
+                          <span>Reset Command Form</span>
+                        </button>
+                      </div>
+
+                      <div class="complex-menu-separator"></div>
+
+                      <div class="complex-menu-group">
+                        <p class="complex-menu-label">View</p>
+                        <label class="complex-menu-item complex-menu-check-item">
+                          <input type="checkbox" id="commandMenuToggleGuide" checked />
+                          <span>Show Button Guide</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div class="card-content">
                   <form id="command-form">
@@ -447,7 +633,7 @@
                           <button type="button" class="btn btn-outline btn-sm" id="addButtonRowBtn">Add Button</button>
                         </div>
                         <div id="buttonRows" class="button-rows"></div>
-                        <p class="hint">
+                        <p class="hint" id="commandButtonsGuideHint">
                           <strong>📌 Button Setup Guide:</strong><br/>
                           ✓ <strong>Quick Reply Button:</strong> The <strong>Value (id)</strong> MUST match an existing command trigger (e.g., ".hello", ".menu1")<br/>
                           ✓ <strong>Single Select:</strong> Each row ID must also match a command trigger<br/>
