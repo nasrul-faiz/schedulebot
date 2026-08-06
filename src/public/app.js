@@ -30,6 +30,8 @@ const scheduleTabCreate = document.getElementById('scheduleTabCreate');
 const scheduleTabList = document.getElementById('scheduleTabList');
 const scheduleCreatePanel = document.getElementById('schedule-create-panel');
 const scheduleListPanel = document.getElementById('schedule-list-panel');
+const scheduleAddButtonRowBtn = document.getElementById('scheduleAddButtonRowBtn');
+const scheduleButtonRows = document.getElementById('scheduleButtonRows');
 const sendForm = document.getElementById('send-form');
 const sendFeedback = document.getElementById('send-feedback');
 const sendTargetTypeInput = document.getElementById('sendTargetType');
@@ -38,6 +40,18 @@ const sendTargetValueLabel = document.getElementById('sendTargetValueLabel');
 const sendTargetHint = document.getElementById('sendTargetHint');
 const sendTargetValueInput = document.getElementById('sendTargetValue');
 const sendMessageTextInput = document.getElementById('sendMessageText');
+const sendMediaTypeInput = document.getElementById('sendMediaType');
+const sendMediaSourceInput = document.getElementById('sendMediaSource');
+const sendMediaUrlInput = document.getElementById('sendMediaUrl');
+const sendMediaUploadInput = document.getElementById('sendMediaUpload');
+const sendMediaUploadHint = document.getElementById('sendMediaUploadHint');
+const sendFileNameInput = document.getElementById('sendFileName');
+const sendMediaSourceField = document.getElementById('sendMediaSourceField');
+const sendMediaUrlField = document.getElementById('sendMediaUrlField');
+const sendMediaUploadField = document.getElementById('sendMediaUploadField');
+const sendFileNameField = document.getElementById('sendFileNameField');
+const sendAddButtonRowBtn = document.getElementById('sendAddButtonRowBtn');
+const sendButtonRows = document.getElementById('sendButtonRows');
 const sendGroupTools = document.getElementById('sendGroupTools');
 const sendGroupPicker = document.getElementById('sendGroupPicker');
 const sendGroupFetchHint = document.getElementById('sendGroupFetchHint');
@@ -46,6 +60,12 @@ const sendPersonalChatTools = document.getElementById('sendPersonalChatTools');
 const sendPersonalChatPicker = document.getElementById('sendPersonalChatPicker');
 const sendPersonalChatFetchHint = document.getElementById('sendPersonalChatFetchHint');
 const sendRefreshPersonalChatsBtn = document.getElementById('sendRefreshPersonalChatsBtn');
+const inboxRefreshBtn = document.getElementById('inboxRefreshBtn');
+const inboxFeedback = document.getElementById('inboxFeedback');
+const inboxConversationList = document.getElementById('inboxConversationList');
+const inboxThreadTitle = document.getElementById('inboxThreadTitle');
+const inboxThreadSubtitle = document.getElementById('inboxThreadSubtitle');
+const inboxMessageList = document.getElementById('inboxMessageList');
 const sendComplexMenuWrap = document.getElementById('sendComplexMenuWrap');
 const sendComplexMenuTrigger = document.getElementById('sendComplexMenuTrigger');
 const sendComplexMenuDropdown = document.getElementById('sendComplexMenuDropdown');
@@ -85,17 +105,24 @@ const schedulesById = new Map(
     item,
   ])
 );
+const deletedMessageRecords = Array.isArray(window.__DELETED_MESSAGES__)
+  ? window.__DELETED_MESSAGES__
+  : [];
 
 let hasLoadedGroups = false;
 let hasLoadedPersonalChats = false;
 let hasLoadedSendGroups = false;
 let hasLoadedSendPersonalChats = false;
+let hasLoadedInbox = false;
+let activeInboxChatId = '';
+let inboxConversations = [];
 let isWhatsAppReady = false;
 
 const PAGE_TITLE_MAP = {
   account: 'Account',
   schedule: 'Schedule',
   'send-message': 'Send Message',
+  inbox: 'Inbox',
   'custom-commands': 'Custom Command',
   'deleted-messages': 'Deleted Messages',
 };
@@ -254,6 +281,11 @@ function showPageByHash(hash) {
 
   setActiveNavItemByHash(`#${pageToShow.getAttribute('data-page')}`);
   updateTopBreadcrumb();
+
+  const pageKey = String(pageToShow.getAttribute('data-page') || '').trim();
+  if (pageKey === 'inbox') {
+    loadInboxConversations();
+  }
 }
 
 function formatLocalDateTime(isoString) {
@@ -851,6 +883,316 @@ function syncSendTargetInputContent() {
   loadSendPersonalChats();
 }
 
+function updateSendMediaFormFlow() {
+  const selectedType = String(sendMediaTypeInput?.value || 'none').trim();
+  const mediaSource = String(sendMediaSourceInput?.value || 'url').trim();
+  const hasMedia = selectedType && selectedType !== 'none';
+  const isDocument = selectedType === 'document';
+  const useUpload = hasMedia && mediaSource === 'upload';
+
+  if (sendMediaSourceField) {
+    sendMediaSourceField.hidden = !hasMedia;
+  }
+
+  if (sendMediaUrlField) {
+    sendMediaUrlField.hidden = !hasMedia || useUpload;
+  }
+  if (sendMediaUrlInput) {
+    sendMediaUrlInput.required = hasMedia && !useUpload;
+    if (!hasMedia || useUpload) {
+      sendMediaUrlInput.value = '';
+    }
+  }
+
+  if (sendMediaUploadField) {
+    sendMediaUploadField.hidden = !hasMedia || !useUpload;
+  }
+  if (sendMediaUploadInput) {
+    sendMediaUploadInput.required = hasMedia && useUpload;
+    if (!hasMedia || !useUpload) {
+      sendMediaUploadInput.value = '';
+    }
+  }
+
+  if (sendMediaUploadHint) {
+    sendMediaUploadHint.textContent = useUpload
+      ? 'Choose a file to upload and send.'
+      : 'Choose URL source or upload source for media.';
+  }
+
+  if (sendFileNameField) {
+    sendFileNameField.hidden = !hasMedia || !isDocument;
+  }
+  if (sendFileNameInput && (!hasMedia || !isDocument)) {
+    sendFileNameInput.value = '';
+  }
+}
+
+async function uploadSendMediaFile(file, mediaType) {
+  const formData = new FormData();
+  formData.set('mediaFile', file);
+  formData.set('mediaType', mediaType);
+
+  const response = await fetch('/api/messages/upload-media', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to upload media file');
+  }
+
+  return data;
+}
+
+function setInboxFeedback(message, color = '#5d645d') {
+  if (!inboxFeedback) return;
+  inboxFeedback.textContent = message;
+  inboxFeedback.style.color = color;
+}
+
+function formatInboxTime(isoString) {
+  const parsed = new Date(String(isoString || ''));
+  if (Number.isNaN(parsed.getTime())) return '--:--';
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(parsed);
+}
+
+function createInboxMediaPreview(item) {
+  const type = String(item?.type || '').trim().toLowerCase();
+  const mediaUrl = String(item?.mediaUrl || '').trim();
+  const fileName = String(item?.fileName || '').trim();
+  if (!type || !mediaUrl) return null;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'inbox-media-wrap';
+
+  if (type === 'image') {
+    const image = document.createElement('img');
+    image.className = 'inbox-media-image';
+    image.src = mediaUrl;
+    image.alt = fileName || 'Inbox image';
+    image.loading = 'lazy';
+    wrap.appendChild(image);
+    return wrap;
+  }
+
+  if (type === 'video') {
+    const video = document.createElement('video');
+    video.className = 'inbox-media-video';
+    video.controls = true;
+    video.preload = 'metadata';
+    video.src = mediaUrl;
+    wrap.appendChild(video);
+    return wrap;
+  }
+
+  if (type === 'audio' || type === 'voice') {
+    const audio = document.createElement('audio');
+    audio.className = 'inbox-media-audio';
+    audio.controls = true;
+    audio.preload = 'metadata';
+    audio.src = mediaUrl;
+    wrap.appendChild(audio);
+    return wrap;
+  }
+
+  if (type === 'document') {
+    const link = document.createElement('a');
+    link.className = 'inbox-media-link';
+    link.href = mediaUrl;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.textContent = fileName || 'Open file';
+    wrap.appendChild(link);
+    return wrap;
+  }
+
+  return null;
+}
+
+function renderInboxMessages(messages) {
+  if (!inboxMessageList) return;
+
+  const rows = Array.isArray(messages) ? messages : [];
+  inboxMessageList.innerHTML = '';
+
+  if (!rows.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'No messages in this conversation yet.';
+    inboxMessageList.appendChild(empty);
+    return;
+  }
+
+  rows.forEach((item) => {
+    const wrap = document.createElement('div');
+    wrap.className = `inbox-message-wrap${item.fromMe ? ' is-me' : ''}`;
+
+    const bubble = document.createElement('article');
+    bubble.className = 'inbox-message-bubble';
+
+    const type = document.createElement('p');
+    type.className = 'inbox-message-type';
+    type.textContent = item.fromMe
+      ? `sent • ${String(item.type || 'text').toUpperCase()}`
+      : `received • ${String(item.type || 'text').toUpperCase()}`;
+    bubble.appendChild(type);
+
+    const text = document.createElement('p');
+    text.className = 'inbox-message-text';
+    text.textContent = String(item.text || '').trim() || '[No text]';
+    bubble.appendChild(text);
+
+    const mediaPreview = createInboxMediaPreview(item);
+    if (mediaPreview) {
+      bubble.appendChild(mediaPreview);
+    }
+
+    const time = document.createElement('p');
+    time.className = 'inbox-message-time';
+    time.textContent = formatInboxTime(item.timestamp);
+    bubble.appendChild(time);
+
+    wrap.appendChild(bubble);
+    inboxMessageList.appendChild(wrap);
+  });
+
+  inboxMessageList.scrollTop = inboxMessageList.scrollHeight;
+}
+
+async function loadInboxMessages(chatId) {
+  const cleanChatId = String(chatId || '').trim();
+  if (!cleanChatId) return;
+
+  activeInboxChatId = cleanChatId;
+
+  const activeConversation = inboxConversations.find((item) => item.chatId === cleanChatId) || null;
+  if (inboxThreadTitle) {
+    inboxThreadTitle.textContent = activeConversation?.name || cleanChatId;
+  }
+  if (inboxThreadSubtitle) {
+    const subtitle = activeConversation
+      ? `${activeConversation.chatType} • ${cleanChatId}`
+      : cleanChatId;
+    inboxThreadSubtitle.textContent = subtitle;
+  }
+
+  renderInboxMessages([]);
+  setInboxFeedback('Loading messages...', '#5d645d');
+
+  try {
+    const response = await fetch(`/api/inbox/conversations/${encodeURIComponent(cleanChatId)}/messages?limit=150`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch messages');
+    }
+
+    renderInboxMessages(Array.isArray(data.messages) ? data.messages : []);
+    setInboxFeedback('Messages loaded.', '#5d645d');
+  } catch (error) {
+    renderInboxMessages([]);
+    setInboxFeedback(error.message, '#b42318');
+  }
+}
+
+function renderInboxConversations(conversations) {
+  if (!inboxConversationList) return;
+
+  const rows = Array.isArray(conversations) ? conversations : [];
+  inboxConversationList.innerHTML = '';
+
+  if (!rows.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'No conversations yet.';
+    inboxConversationList.appendChild(empty);
+    return;
+  }
+
+  rows.forEach((conversation) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `inbox-conversation-item${conversation.chatId === activeInboxChatId ? ' is-active' : ''}`;
+
+    const head = document.createElement('div');
+    head.className = 'inbox-conversation-head';
+
+    const name = document.createElement('p');
+    name.className = 'inbox-conversation-name';
+    name.textContent = conversation.name || conversation.chatId;
+    head.appendChild(name);
+
+    const time = document.createElement('p');
+    time.className = 'inbox-conversation-time';
+    time.textContent = formatInboxTime(conversation.lastTimestamp);
+    head.appendChild(time);
+
+    const preview = document.createElement('p');
+    preview.className = 'inbox-conversation-preview';
+    const prefix = conversation.lastMessageFromMe ? 'You: ' : '';
+    preview.textContent = `${prefix}${conversation.lastMessageText || '[No preview]'}`;
+
+    item.appendChild(head);
+    item.appendChild(preview);
+    item.addEventListener('click', () => {
+      activeInboxChatId = conversation.chatId;
+      renderInboxConversations(inboxConversations);
+      loadInboxMessages(conversation.chatId);
+    });
+
+    inboxConversationList.appendChild(item);
+  });
+}
+
+async function loadInboxConversations(force = false) {
+  if (!inboxConversationList) return;
+  if (hasLoadedInbox && !force) return;
+
+  setInboxFeedback('Loading conversations...', '#5d645d');
+  if (inboxRefreshBtn) {
+    setButtonLoading(inboxRefreshBtn, true, 'Refreshing inbox');
+  }
+
+  try {
+    const response = await fetch('/api/inbox/conversations');
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch conversations');
+    }
+
+    inboxConversations = Array.isArray(data.conversations) ? data.conversations : [];
+    hasLoadedInbox = true;
+    renderInboxConversations(inboxConversations);
+
+    if (!activeInboxChatId && inboxConversations.length) {
+      activeInboxChatId = inboxConversations[0].chatId;
+      renderInboxConversations(inboxConversations);
+      await loadInboxMessages(activeInboxChatId);
+    } else if (activeInboxChatId) {
+      await loadInboxMessages(activeInboxChatId);
+    } else {
+      setInboxFeedback('No conversations yet.', '#5d645d');
+    }
+  } catch (error) {
+    inboxConversations = [];
+    renderInboxConversations([]);
+    setInboxFeedback(error.message, '#b42318');
+  } finally {
+    if (inboxRefreshBtn) {
+      setButtonLoading(inboxRefreshBtn, false);
+      inboxRefreshBtn.disabled = false;
+    }
+  }
+}
+
 function closeSendComplexMenu() {
   if (!sendComplexMenuDropdown || !sendComplexMenuTrigger) return;
   sendComplexMenuDropdown.hidden = true;
@@ -915,8 +1257,10 @@ async function handleSendMenuAction(action) {
     if (sendForm) {
       const currentType = String(sendTargetTypeInput?.value || 'group').trim() || 'group';
       sendForm.reset();
+      clearButtonRowsFromContainer(sendButtonRows);
       if (sendTargetTypeInput) sendTargetTypeInput.value = currentType;
       syncSendTargetInputContent();
+      updateSendMediaFormFlow();
       if (sendFeedback) {
         sendFeedback.textContent = '';
       }
@@ -1075,8 +1419,10 @@ if (sendComplexMenuWrap && sendComplexMenuTrigger && sendComplexMenuDropdown) {
       if (sendForm) {
         const currentType = String(sendTargetTypeInput?.value || 'group').trim() || 'group';
         sendForm.reset();
+        clearButtonRowsFromContainer(sendButtonRows);
         if (sendTargetTypeInput) sendTargetTypeInput.value = currentType;
         syncSendTargetInputContent();
+        updateSendMediaFormFlow();
       }
     }
   });
@@ -1182,6 +1528,16 @@ if (sendTargetTypeInput) {
   syncSendTargetInputContent();
 }
 
+if (sendMediaTypeInput) {
+  sendMediaTypeInput.addEventListener('change', updateSendMediaFormFlow);
+}
+
+if (sendMediaSourceInput) {
+  sendMediaSourceInput.addEventListener('change', updateSendMediaFormFlow);
+}
+
+updateSendMediaFormFlow();
+
 if (sidebarMenuBtn) {
   sidebarMenuBtn.addEventListener('click', openSidebar);
 }
@@ -1269,6 +1625,12 @@ if (sendRefreshPersonalChatsBtn) {
   });
 }
 
+if (inboxRefreshBtn) {
+  inboxRefreshBtn.addEventListener('click', () => {
+    loadInboxConversations(true);
+  });
+}
+
 if (waStatus) {
   refreshWhatsAppState();
   window.setInterval(refreshWhatsAppState, 5000);
@@ -1289,6 +1651,7 @@ if (form) {
       targetType: selectedType,
       targetValue: targetValueRaw,
       message: String(formData.get('message') || '').trim(),
+      buttons: collectButtonsFromContainer(scheduleButtonRows),
       scheduleAt: String(formData.get('scheduleAt') || '').trim(),
       timezoneOffsetMinutes: new Date().getTimezoneOffset(),
     };
@@ -1318,6 +1681,7 @@ if (form) {
       feedback.textContent = 'Schedule saved successfully';
       feedback.style.color = '#136f63';
       form.reset();
+      clearButtonRowsFromContainer(scheduleButtonRows);
       syncTargetInputContent();
       setTimeout(() => window.location.reload(), 350);
     } catch (error) {
@@ -1335,15 +1699,65 @@ if (sendForm) {
     const submitBtn = sendForm.querySelector('button[type="submit"]');
 
     const formData = new FormData(sendForm);
+    const selectedMediaType = String(formData.get('mediaType') || 'none').trim();
+    const selectedMediaSource = String(formData.get('mediaSource') || 'url').trim();
     const payload = {
       targetType: String(formData.get('targetType') || '').trim(),
       targetValue: String(formData.get('targetValue') || '').trim(),
       message: String(formData.get('message') || '').trim(),
+      buttons: collectButtonsFromContainer(sendButtonRows),
+      mediaType: selectedMediaType,
+      mediaUrl: String(formData.get('mediaUrl') || '').trim(),
+      fileName: String(formData.get('fileName') || '').trim(),
     };
 
-    if (!payload.targetType || !payload.targetValue || !payload.message) {
+    if (selectedMediaType !== 'none' && selectedMediaSource === 'upload') {
+      const selectedFile = sendMediaUploadInput?.files?.[0];
+      if (!selectedFile) {
+        if (sendFeedback) {
+          sendFeedback.textContent = 'Please choose a media file to upload.';
+          sendFeedback.style.color = '#b42318';
+        }
+        return;
+      }
+
+      try {
+        if (sendFeedback) {
+          sendFeedback.textContent = 'Uploading media file...';
+          sendFeedback.style.color = '#5d645d';
+        }
+        const mediaKind = selectedMediaType === 'voice' ? 'audio' : selectedMediaType;
+        const uploaded = await uploadSendMediaFile(selectedFile, mediaKind);
+        payload.mediaUrl = String(uploaded.mediaUrl || '').trim();
+        if (!payload.fileName) {
+          payload.fileName = String(uploaded.fileName || '').trim();
+        }
+      } catch (error) {
+        if (sendFeedback) {
+          sendFeedback.textContent = error.message;
+          sendFeedback.style.color = '#b42318';
+        }
+        return;
+      }
+    }
+
+    if (selectedMediaType !== 'none' && !payload.mediaUrl) {
       if (sendFeedback) {
-        sendFeedback.textContent = 'Target type, target value, and message are required.';
+        sendFeedback.textContent = 'Media URL is required when media type is selected.';
+        sendFeedback.style.color = '#b42318';
+      }
+      return;
+    }
+
+    if (selectedMediaType === 'voice') {
+      payload.voiceNote = true;
+    }
+
+    const hasMedia = payload.mediaType && payload.mediaType !== 'none' && payload.mediaUrl;
+
+    if (!payload.targetType || !payload.targetValue || (!payload.message && !payload.buttons.length && !hasMedia)) {
+      if (sendFeedback) {
+        sendFeedback.textContent = 'Target type, target value, and at least message, buttons, or media are required.';
         sendFeedback.style.color = '#b42318';
       }
       return;
@@ -1374,8 +1788,10 @@ if (sendForm) {
 
       const selectedType = String(sendTargetTypeInput?.value || 'group').trim();
       sendForm.reset();
+      clearButtonRowsFromContainer(sendButtonRows);
       if (sendTargetTypeInput) sendTargetTypeInput.value = selectedType || 'group';
       syncSendTargetInputContent();
+      updateSendMediaFormFlow();
     } catch (error) {
       if (sendFeedback) {
         sendFeedback.textContent = error.message;
@@ -1419,6 +1835,7 @@ const scheduleModalTarget = document.getElementById('scheduleModalTarget');
 const scheduleModalTime = document.getElementById('scheduleModalTime');
 const scheduleModalStatus = document.getElementById('scheduleModalStatus');
 const scheduleModalMessage = document.getElementById('scheduleModalMessage');
+const scheduleModalButtons = document.getElementById('scheduleModalButtons');
 const scheduleModalFeedback = document.getElementById('scheduleModalFeedback');
 const scheduleModalCloseBtn = document.getElementById('scheduleModalCloseBtn');
 const scheduleModalDeleteBtn = document.getElementById('scheduleModalDeleteBtn');
@@ -1455,6 +1872,10 @@ function openScheduleViewModal(item) {
   }
   if (scheduleModalStatus) scheduleModalStatus.textContent = String(item.status || '-');
   if (scheduleModalMessage) scheduleModalMessage.textContent = String(item.message || '-');
+  if (scheduleModalButtons) {
+    const buttons = Array.isArray(item.buttons) ? item.buttons : [];
+    scheduleModalButtons.textContent = buttons.length ? JSON.stringify(buttons, null, 2) : '-';
+  }
   if (scheduleModalFeedback) {
     scheduleModalFeedback.textContent = '';
     scheduleModalFeedback.style.color = '#5d645d';
@@ -1569,7 +1990,7 @@ const commandsByTrigger = new Map(
   ])
 );
 
-function buttonRowTemplate(button = {}) {
+function buttonRowTemplate(button = {}, onChange = () => {}) {
   const row = document.createElement('div');
   row.className = 'button-row';
 
@@ -1656,13 +2077,13 @@ function buttonRowTemplate(button = {}) {
     rowHeaderInput.value = String(rowData.header || '').trim();
     rowDescriptionInput.value = String(rowData.description || '').trim();
 
-    rowTitleInput.addEventListener('input', updateCommandSubmitState);
-    rowIdInput.addEventListener('input', updateCommandSubmitState);
-    rowHeaderInput.addEventListener('input', updateCommandSubmitState);
-    rowDescriptionInput.addEventListener('input', updateCommandSubmitState);
+    rowTitleInput.addEventListener('input', onChange);
+    rowIdInput.addEventListener('input', onChange);
+    rowHeaderInput.addEventListener('input', onChange);
+    rowDescriptionInput.addEventListener('input', onChange);
     removeSingleRowBtn.addEventListener('click', () => {
       rowEditor.remove();
-      updateCommandSubmitState();
+      onChange();
     });
 
     return rowEditor;
@@ -1752,33 +2173,41 @@ function buttonRowTemplate(button = {}) {
   syncPlaceholder();
   typeSelect.addEventListener('change', () => {
     syncPlaceholder();
-    updateCommandSubmitState();
+    onChange();
   });
 
-  labelInput.addEventListener('input', updateCommandSubmitState);
-  valueInput.addEventListener('input', updateCommandSubmitState);
-  singleSelectSectionTitleInput.addEventListener('input', updateCommandSubmitState);
-  singleSelectHighlightLabelInput.addEventListener('input', updateCommandSubmitState);
+  labelInput.addEventListener('input', onChange);
+  valueInput.addEventListener('input', onChange);
+  singleSelectSectionTitleInput.addEventListener('input', onChange);
+  singleSelectHighlightLabelInput.addEventListener('input', onChange);
   addSingleRowBtn.addEventListener('click', () => {
     if (!singleSelectRowsEditor) return;
     singleSelectRowsEditor.appendChild(buildSingleSelectRowEditor());
-    updateCommandSubmitState();
+    onChange();
   });
   removeBtn.addEventListener('click', () => {
     row.remove();
-    updateCommandSubmitState();
+    onChange();
   });
 
   return row;
 }
 
+function addButtonRowToContainer(container, button = {}, onChange = () => {}) {
+  if (!container) return;
+  container.appendChild(buttonRowTemplate(button, onChange));
+}
+
 function addButtonRow(button) {
-  if (!buttonRows) return;
-  buttonRows.appendChild(buttonRowTemplate(button));
+  addButtonRowToContainer(buttonRows, button, updateCommandSubmitState);
 }
 
 function clearButtonRows() {
   if (buttonRows) buttonRows.innerHTML = '';
+}
+
+function clearButtonRowsFromContainer(container) {
+  if (container) container.innerHTML = '';
 }
 
 function parseSingleSelectRowsInput(rawValue, fallbackTitle) {
@@ -1814,10 +2243,10 @@ function parseSingleSelectRowsInput(rawValue, fallbackTitle) {
   return [{ id: cleanValue, title: cleanTitle }];
 }
 
-function collectButtonsFromRows() {
-  if (!buttonRows) return [];
+function collectButtonsFromContainer(container) {
+  if (!container) return [];
 
-  return Array.from(buttonRows.querySelectorAll('.button-row'))
+  return Array.from(container.querySelectorAll('.button-row'))
     .map((row) => {
       const type = row.querySelector('.btn-type-select').value;
       const label = row.querySelector('.btn-label-input').value.trim();
@@ -1881,8 +2310,24 @@ function collectButtonsFromRows() {
     .filter(Boolean);
 }
 
+function collectButtonsFromRows() {
+  return collectButtonsFromContainer(buttonRows);
+}
+
 if (addButtonRowBtn) {
   addButtonRowBtn.addEventListener('click', () => addButtonRow());
+}
+
+if (scheduleAddButtonRowBtn) {
+  scheduleAddButtonRowBtn.addEventListener('click', () => {
+    addButtonRowToContainer(scheduleButtonRows);
+  });
+}
+
+if (sendAddButtonRowBtn) {
+  sendAddButtonRowBtn.addEventListener('click', () => {
+    addButtonRowToContainer(sendButtonRows);
+  });
 }
 
 function setCommandFeedback(message, color) {
@@ -2184,7 +2629,7 @@ const commandPreviewIncomingText = document.getElementById('commandPreviewIncomi
 const commandPreviewIncomingTime = document.getElementById('commandPreviewIncomingTime');
 const commandPreviewOutgoingTime = document.getElementById('commandPreviewOutgoingTime');
 const commandPreviewDateChip = document.getElementById('commandPreviewDateChip');
-const commandPreviewStatusTime = document.querySelector('.wa-status-time');
+const commandPreviewStatusTime = document.querySelector('#commandPreviewModal .wa-status-time');
 
 function closeCommandPreviewModal() {
   if (!commandPreviewModal) return;
@@ -2542,6 +2987,11 @@ if (closeCommandPreviewModalBtn) {
 }
 
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && deletedConversationModal && !deletedConversationModal.hidden) {
+    closeDeletedConversationModal();
+    return;
+  }
+
   if (event.key === 'Escape' && commandPreviewModal && !commandPreviewModal.hidden) {
     closeCommandPreviewModal();
     return;
@@ -2553,24 +3003,247 @@ document.addEventListener('keydown', (event) => {
 });
 
 const clearDeletedMessagesBtn = document.getElementById('clearDeletedMessagesBtn');
+const deletedConversationModal = document.getElementById('deletedConversationModal');
+const closeDeletedConversationModalBtn = document.getElementById('closeDeletedConversationModal');
+const deletedConversationModalCloseBtn = document.getElementById('deletedConversationModalCloseBtn');
+const deletedConversationModalTitle = document.getElementById('deletedConversationModalTitle');
+const deletedConversationModalSubtitle = document.getElementById('deletedConversationModalSubtitle');
+const deletedConversationModalAvatar = document.getElementById('deletedConversationModalAvatar');
+const deletedConversationModalMessages = document.getElementById('deletedConversationModalMessages');
+const deletedConversationModalStatusTime = document.getElementById('deletedConversationModalStatusTime');
 
-document.querySelectorAll('.btn-delete-deleted-message').forEach((button) => {
+function getDeletedConversationLabel(item) {
+  if (!item || typeof item !== 'object') return 'Unknown Chat';
+
+  const chatId = String(item.chatId || '').trim();
+  const chatName = String(item.chatName || '').trim();
+  const senderName = String(item.senderName || '').trim();
+  if (item.isGroup) return chatName || chatId || 'Unknown Group';
+  return senderName || chatName || chatId || 'Unknown Contact';
+}
+
+function getDeletedMessagePreview(item) {
+  if (!item || typeof item !== 'object') return '[No content]';
+  if (item.mediaUrl) {
+    const fileName = String(item.fileName || '').trim();
+    const type = String(item.type || 'media').trim();
+    return fileName || `[${type}]`;
+  }
+  const text = String(item.text || '').trim();
+  return text || '[No content]';
+}
+
+function normalizeDeletedRecordStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'partial') return 'partial';
+  if (normalized === 'missing') return 'missing';
+  return 'recovered';
+}
+
+function formatDeletedTimeOnly(isoString) {
+  const parsed = new Date(String(isoString || ''));
+  if (Number.isNaN(parsed.getTime())) return '--:--';
+
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(parsed);
+}
+
+function formatDurationLabel(totalSeconds) {
+  const seconds = Number(totalSeconds);
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.floor(seconds % 60);
+  return `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+}
+
+function formatByteSizeLabel(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return '';
+
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function createDeletedMediaPreview(record) {
+  const mediaUrl = String(record.mediaUrl || '').trim();
+  if (!mediaUrl) return null;
+
+  const type = String(record.type || '').trim().toLowerCase();
+  const wrap = document.createElement('div');
+  wrap.className = 'deleted-wa-media-wrap';
+
+  if (type === 'image' || type === 'sticker') {
+    const image = document.createElement('img');
+    image.className = 'deleted-wa-media-image';
+    image.src = mediaUrl;
+    image.alt = type === 'sticker' ? 'Deleted sticker' : 'Deleted image';
+    image.loading = 'lazy';
+    wrap.appendChild(image);
+    return wrap;
+  }
+
+  if (type === 'video') {
+    const video = document.createElement('video');
+    video.className = 'deleted-wa-media-video';
+    video.controls = true;
+    video.preload = 'metadata';
+    video.src = mediaUrl;
+    wrap.appendChild(video);
+    return wrap;
+  }
+
+  if (type === 'audio' || type === 'voice') {
+    const audio = document.createElement('audio');
+    audio.className = 'deleted-wa-media-audio';
+    audio.controls = true;
+    audio.preload = 'metadata';
+    audio.src = mediaUrl;
+    wrap.appendChild(audio);
+    return wrap;
+  }
+
+  const link = document.createElement('a');
+  link.className = 'deleted-wa-media-link';
+  link.href = mediaUrl;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = getDeletedMessagePreview(record);
+  wrap.appendChild(link);
+
+  return wrap;
+}
+
+function createDeletedMessageBubble(record) {
+  const bubbleWrap = document.createElement('div');
+  bubbleWrap.className = 'deleted-wa-message-wrap';
+
+  const bubble = document.createElement('article');
+  bubble.className = 'wa-user-bubble deleted-wa-message-bubble';
+
+  const sender = document.createElement('p');
+  sender.className = 'deleted-wa-sender';
+  sender.textContent = String(record.senderName || record.senderId || 'Unknown sender').trim();
+  bubble.appendChild(sender);
+
+  if (record.mediaUrl) {
+    const mediaPreview = createDeletedMediaPreview(record);
+    if (mediaPreview) {
+      bubble.appendChild(mediaPreview);
+    }
+
+    const fallbackLink = document.createElement('a');
+    fallbackLink.className = 'deleted-wa-media-link';
+    fallbackLink.href = String(record.mediaUrl);
+    fallbackLink.target = '_blank';
+    fallbackLink.rel = 'noopener';
+    fallbackLink.textContent = `Open file: ${getDeletedMessagePreview(record)}`;
+    bubble.appendChild(fallbackLink);
+  }
+
+  const text = String(record.text || '').trim();
+  if (text) {
+    const textEl = document.createElement('p');
+    textEl.className = 'wa-user-text';
+    textEl.textContent = text;
+    bubble.appendChild(textEl);
+  }
+
+  if (!record.mediaUrl && !text) {
+    const fallback = document.createElement('p');
+    fallback.className = 'wa-user-text';
+    fallback.textContent = '[No content]';
+    bubble.appendChild(fallback);
+  }
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'wa-incoming-time';
+  timeEl.textContent = formatLocalDateTime(record.deletedAt) || formatDeletedTimeOnly(record.deletedAt);
+  bubble.appendChild(timeEl);
+  bubbleWrap.appendChild(bubble);
+
+  return bubbleWrap;
+}
+
+function closeDeletedConversationModal() {
+  if (!deletedConversationModal) return;
+  deletedConversationModal.hidden = true;
+  if (deletedConversationModalMessages) {
+    deletedConversationModalMessages.innerHTML = '';
+  }
+  document.body.style.overflow = '';
+}
+
+function openDeletedConversationModal(chatId) {
+  if (!deletedConversationModal || !deletedConversationModalMessages) return;
+
+  const key = String(chatId || '').trim();
+  if (!key) return;
+
+  const records = deletedMessageRecords
+    .filter((item) => String(item.chatId || '').trim() === key)
+    .sort((a, b) => new Date(a.deletedAt).getTime() - new Date(b.deletedAt).getTime());
+  if (!records.length) return;
+
+  const latest = records[records.length - 1];
+  const title = getDeletedConversationLabel(latest);
+
+  if (deletedConversationModalTitle) {
+    deletedConversationModalTitle.textContent = title;
+  }
+  if (deletedConversationModalSubtitle) {
+    deletedConversationModalSubtitle.textContent = `${records.length} deleted message${records.length > 1 ? 's' : ''}`;
+  }
+  if (deletedConversationModalAvatar) {
+    deletedConversationModalAvatar.textContent = String(title || '?').charAt(0).toUpperCase() || '?';
+  }
+  if (deletedConversationModalStatusTime) {
+    deletedConversationModalStatusTime.textContent = formatDeletedTimeOnly(new Date().toISOString());
+  }
+
+  deletedConversationModalMessages.innerHTML = '';
+  const dateChip = document.createElement('div');
+  dateChip.className = 'wa-date-chip';
+  dateChip.textContent = 'Deleted message records';
+  deletedConversationModalMessages.appendChild(dateChip);
+
+  records.forEach((record) => {
+    deletedConversationModalMessages.appendChild(createDeletedMessageBubble(record));
+  });
+
+  deletedConversationModal.hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+
+document.querySelectorAll('.btn-open-deleted-conversation').forEach((button) => {
+  button.addEventListener('click', () => {
+    const chatId = String(button.dataset.chatId || '').trim();
+    if (!chatId) return;
+    openDeletedConversationModal(chatId);
+  });
+});
+
+document.querySelectorAll('.btn-delete-deleted-conversation').forEach((button) => {
   button.addEventListener('click', async () => {
-    const id = button.dataset.id;
-    if (!id) return;
+    const chatId = String(button.dataset.chatId || '').trim();
+    if (!chatId) return;
 
-    const confirmDelete = window.confirm('Remove this record?');
+    const confirmDelete = window.confirm('Delete all deleted-message records for this conversation?');
     if (!confirmDelete) return;
 
-    setButtonLoading(button, true, 'Removing record');
+    setButtonLoading(button, true, 'Deleting conversation records');
 
     try {
-      const response = await fetch(`/api/deleted-messages/${encodeURIComponent(id)}`, {
+      const response = await fetch(`/api/deleted-messages/chat/${encodeURIComponent(chatId)}`, {
         method: 'DELETE',
       });
       if (!response.ok && response.status !== 204) {
         const data = await response.json();
-        throw new Error(data.error || 'Failed to remove record');
+        throw new Error(data.error || 'Failed to delete conversation records');
       }
       window.location.reload();
     } catch (error) {
@@ -2579,6 +3252,22 @@ document.querySelectorAll('.btn-delete-deleted-message').forEach((button) => {
     }
   });
 });
+
+if (deletedConversationModal) {
+  deletedConversationModal.addEventListener('click', (event) => {
+    if (event.target instanceof HTMLElement && event.target.dataset.closeModal === 'deleted-conversation') {
+      closeDeletedConversationModal();
+    }
+  });
+}
+
+if (closeDeletedConversationModalBtn) {
+  closeDeletedConversationModalBtn.addEventListener('click', closeDeletedConversationModal);
+}
+
+if (deletedConversationModalCloseBtn) {
+  deletedConversationModalCloseBtn.addEventListener('click', closeDeletedConversationModal);
+}
 
 if (clearDeletedMessagesBtn) {
   clearDeletedMessagesBtn.addEventListener('click', async () => {

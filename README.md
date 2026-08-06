@@ -6,6 +6,9 @@ Bot WhatsApp untuk menjadwalkan pengiriman pesan melalui web dashboard.
 
 - Koneksi WhatsApp Web dengan QR code
 - Buat schedule pesan untuk chat personal dan group dari dashboard
+- Dukungan tombol interaktif (quick reply / URL / call / copy / single select) untuk `Send Message` dan `Schedule`
+- Menu `Inbox` untuk lihat daftar conversation dan isi chat (pesan masuk + pesan terkirim), termasuk preview media bila tersedia
+- `Send Message` support media: image, video, audio/voice note, dan file document (URL atau upload)
 - Auto-list group WhatsApp di dashboard untuk isi ID group otomatis
 - Scheduler otomatis cek pesan jatuh tempo setiap 5 detik
 - Daftar schedule dengan status: `pending`, `sent`, `failed`
@@ -75,6 +78,38 @@ Bot WhatsApp untuk menjadwalkan pengiriman pesan melalui web dashboard.
 	- `group`: id group WhatsApp, contoh `1203630xxxx@g.us` (atau tanpa suffix `@g.us`)
 - Waktu kirim: isi lewat input `datetime-local` pada form dashboard
 
+### Interactive Buttons (Dashboard)
+
+Untuk `Send Message` dan `Schedule`, sekarang tersedia field builder tombol:
+
+1. Klik `Add Button`
+2. Pilih tipe (`Quick Reply`, `Open Link`, `Call`, `WhatsApp`, `Copy Code`, `Single Select`)
+3. Isi label dan value sesuai tipe
+
+Anda tidak perlu menulis JSON manual dari dashboard.
+
+Jika perlu kirim lewat API, format array yang diterima tetap seperti berikut:
+
+```json
+[
+	{
+		"name": "quick_reply",
+		"buttonParamsJson": "{\"display_text\":\"Check\",\"id\":\".alive\"}"
+	}
+]
+```
+
+Contoh `single_select`:
+
+```json
+[
+	{
+		"name": "single_select",
+		"buttonParamsJson": "{\"title\":\"Pilih Menu\",\"sections\":[{\"title\":\"Options\",\"rows\":[{\"id\":\".menu1\",\"title\":\"Menu 1\"}]}]}"
+	}
+]
+```
+
 ## Catatan
 
 - Jika `DATABASE_URL` diset, data schedule disimpan ke PostgreSQL.
@@ -141,3 +176,13 @@ Project ini sudah disediakan konfigurasi Railway dalam file `railway.json`.
    - Cuba buat command baru dengan button baru (jangan edit command lama)
 
 Healthcheck endpoint tersedia di `GET /healthz`.
+
+## API Inbox
+
+- `GET /api/inbox/conversations` -> list conversation dari store WhatsApp
+- `GET /api/inbox/conversations/:chatId/messages?limit=150` -> isi pesan untuk satu conversation
+
+## API Send Message Media
+
+- `POST /api/messages/upload-media` -> upload file media (multipart form)
+- `POST /api/messages/send` -> kirim pesan dengan opsi `mediaType`, `mediaUrl`, `fileName`, `voiceNote`

@@ -59,6 +59,14 @@
               </svg>
               <span>Send Message</span>
             </a>
+            <a class="nav-item" href="#inbox">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M22 12h-4l-3 4-4-8-3 4H2"></path>
+                <path d="M5.45 5.11A9 9 0 0 1 20 12"></path>
+                <path d="M18.55 18.89A9 9 0 0 1 4 12"></path>
+              </svg>
+              <span>Inbox</span>
+            </a>
             <a class="nav-item" href="#custom-commands">
               <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M4 17l6-6-6-6"></path>
@@ -249,6 +257,15 @@
                     <div class="field">
                       <label for="message">Message</label>
                       <textarea id="message" name="message" rows="4" required></textarea>
+                    </div>
+
+                    <div class="field" id="scheduleButtonsField">
+                      <div class="field-head">
+                        <label>Interactive Buttons <span class="muted">(optional)</span></label>
+                        <button type="button" class="btn btn-outline btn-sm" id="scheduleAddButtonRowBtn">Add Button</button>
+                      </div>
+                      <div id="scheduleButtonRows" class="button-rows"></div>
+                      <p class="hint">User boleh pilih button terus tanpa perlu tulis JSON.</p>
                     </div>
 
                     <div class="field field-narrow">
@@ -482,12 +499,89 @@
 
                     <div class="field">
                       <label for="sendMessageText">Message</label>
-                      <textarea id="sendMessageText" name="message" rows="4" required></textarea>
+                      <textarea id="sendMessageText" name="message" rows="4"></textarea>
+                    </div>
+
+                    <div class="field">
+                      <label for="sendMediaType">Media Type <span class="muted">(optional)</span></label>
+                      <select id="sendMediaType" name="mediaType">
+                        <option value="none" selected>No media</option>
+                        <option value="image">Image</option>
+                        <option value="video">Video</option>
+                        <option value="audio">Audio</option>
+                        <option value="voice">Voice Note</option>
+                        <option value="document">File (Document)</option>
+                      </select>
+                    </div>
+
+                    <div class="field" id="sendMediaSourceField" hidden>
+                      <label for="sendMediaSource">Media Source</label>
+                      <select id="sendMediaSource" name="mediaSource">
+                        <option value="url" selected>By URL</option>
+                        <option value="upload">Upload File</option>
+                      </select>
+                    </div>
+
+                    <div class="field" id="sendMediaUrlField" hidden>
+                      <label for="sendMediaUrl">Media URL</label>
+                      <input id="sendMediaUrl" name="mediaUrl" placeholder="https://..." />
+                    </div>
+
+                    <div class="field" id="sendMediaUploadField" hidden>
+                      <label for="sendMediaUpload">Upload Media File <span class="muted">(max 20MB)</span></label>
+                      <input id="sendMediaUpload" name="mediaUpload" type="file" />
+                      <p class="hint" id="sendMediaUploadHint">Choose a file to upload and send.</p>
+                    </div>
+
+                    <div class="field" id="sendFileNameField" hidden>
+                      <label for="sendFileName">File Name <span class="muted">(document only, optional)</span></label>
+                      <input id="sendFileName" name="fileName" placeholder="invoice.pdf" />
+                    </div>
+
+                    <div class="field" id="sendButtonsField">
+                      <div class="field-head">
+                        <label>Interactive Buttons <span class="muted">(optional)</span></label>
+                        <button type="button" class="btn btn-outline btn-sm" id="sendAddButtonRowBtn">Add Button</button>
+                      </div>
+                      <div id="sendButtonRows" class="button-rows"></div>
+                      <p class="hint">Isi message atau buttons (sekurang-kurangnya satu).</p>
                     </div>
 
                     <button type="submit" class="btn btn-primary btn-block">Send Now</button>
                   </form>
                   <p id="send-feedback" class="feedback"></p>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="page" data-page="inbox" id="inbox" hidden>
+            <div class="inbox-layout">
+              <article class="card inbox-list-card">
+                <div class="card-header section-head">
+                  <div>
+                    <h2 class="card-title">Inbox Conversations</h2>
+                    <p class="card-description">List kontak/group yang pernah kirim atau terima pesan</p>
+                  </div>
+                  <button type="button" class="btn btn-outline btn-sm" id="inboxRefreshBtn">Refresh</button>
+                </div>
+                <div class="card-content">
+                  <p class="feedback" id="inboxFeedback"></p>
+                  <div class="inbox-conversation-list" id="inboxConversationList">
+                    <p class="muted">No conversations loaded yet.</p>
+                  </div>
+                </div>
+              </article>
+
+              <article class="card inbox-thread-card">
+                <div class="card-header">
+                  <h2 class="card-title" id="inboxThreadTitle">Select a conversation</h2>
+                  <p class="card-description" id="inboxThreadSubtitle">Choose a contact on the left to view messages</p>
+                </div>
+                <div class="card-content inbox-thread-content">
+                  <div class="inbox-message-list" id="inboxMessageList">
+                    <p class="muted">Messages will appear here.</p>
+                  </div>
                 </div>
               </article>
             </div>
@@ -723,63 +817,100 @@
           </section>
 
           <section class="page" data-page="deleted-messages" id="deleted-messages" hidden>
-            <article class="card table-card">
+            <article class="card">
               <div class="card-header section-head">
                 <div>
                   <h2 class="card-title">Deleted Messages</h2>
-                  <p class="card-description">Log of messages that were deleted by senders, captured automatically</p>
+                  <p class="card-description">List chat names, then open a WhatsApp-style conversation to view deleted messages</p>
                 </div>
-                <button type="button" class="btn btn-outline btn-sm" id="clearDeletedMessagesBtn" <%= !deletedMessages.length ? 'disabled' : '' %>>Clear All</button>
+                <% const deletedMessagesUi = deletedMessages.filter((item) => {
+                  const chatId = String(item.chatId || '').toLowerCase();
+                  const senderId = String(item.senderId || '').toLowerCase();
+                  return !chatId.endsWith('@lid') && !senderId.endsWith('@lid');
+                }); %>
+                <button type="button" class="btn btn-outline btn-sm" id="clearDeletedMessagesBtn" <%= !deletedMessagesUi.length ? 'disabled' : '' %>>Clear All</button>
               </div>
-              <div class="card-content no-pad">
-                <div class="table-wrap">
-                  <table class="deleted-messages-table">
-                    <thead>
-                      <tr>
-                        <th>Chat</th>
-                        <th>Sender</th>
-                        <th>Type</th>
-                        <th>Content</th>
-                        <th>Deleted At</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody id="deleted-messages-table-body">
-                      <% if (!deletedMessages.length) { %>
-                      <tr>
-                        <td colspan="6" class="muted">No deleted messages recorded yet</td>
-                      </tr>
-                      <% } %>
+              <div class="card-content">
+                <% const deletedConversationMap = new Map(); %>
+                <% deletedMessagesUi.forEach((item) => {
+                  const key = String(item.chatId || 'unknown');
+                  const chatLabel = item.isGroup
+                    ? String(item.chatName || item.chatId || 'Unknown Group')
+                    : String(item.senderName || item.chatName || item.chatId || 'Unknown Contact');
+                  const existing = deletedConversationMap.get(key);
+                  if (!existing) {
+                    deletedConversationMap.set(key, {
+                      chatId: key,
+                      chatLabel,
+                      isGroup: Boolean(item.isGroup),
+                      total: 1,
+                      latest: item,
+                    });
+                  } else {
+                    existing.total += 1;
+                    if (new Date(item.deletedAt).getTime() > new Date(existing.latest.deletedAt).getTime()) {
+                      existing.latest = item;
+                    }
+                  }
+                }); %>
+                <% const deletedConversations = Array.from(deletedConversationMap.values())
+                  .sort((a, b) => new Date(b.latest.deletedAt).getTime() - new Date(a.latest.deletedAt).getTime()); %>
 
-                      <% deletedMessages.forEach((item) => { %>
-                      <tr data-id="<%= item.id %>">
-                        <td>
-                          <%= item.isGroup ? (item.chatName || item.chatId) : item.chatId %>
-                          <% if (item.isGroup) { %>
-                          <span class="badge badge-outline">group</span>
-                          <% } %>
-                        </td>
-                        <td><%= item.senderName || item.senderId || '-' %></td>
-                        <td><span class="badge badge-outline"><%= item.type %></span></td>
-                        <td class="cell-message deleted-content-cell">
-                          <% if (item.mediaUrl) { %>
-                          <a href="<%= item.mediaUrl %>" target="_blank" rel="noopener"><%= item.fileName || 'View media' %></a>
-                          <% if (item.text) { %><br /><span class="muted"><%= item.text %></span><% } %>
-                          <% } else { %>
-                          <%= item.text %>
-                          <% } %>
-                        </td>
-                        <td class="js-local-datetime" data-iso="<%= item.deletedAt %>">
-                          <%= dayjs(item.deletedAt).format('DD MMM YYYY HH:mm:ss') %>
-                        </td>
-                        <td class="cell-action">
-                          <button class="btn btn-ghost btn-sm btn-delete-deleted-message" data-id="<%= item.id %>">Remove</button>
-                        </td>
-                      </tr>
-                      <% }) %>
-                    </tbody>
-                  </table>
+                <% if (!deletedConversations.length) { %>
+                <p class="muted">No deleted messages recorded yet</p>
+                <% } else { %>
+                <div class="deleted-conversation-list" id="deletedConversationList">
+                  <% deletedConversations.forEach((entry) => {
+                    const latest = entry.latest;
+                    const latestPreview = latest.mediaUrl
+                      ? (latest.fileName || '[' + String(latest.type || 'media') + ']')
+                      : (latest.text || '[No content]');
+                  %>
+                  <article class="deleted-conversation-item">
+                    <div class="deleted-conversation-avatar" aria-hidden="true"><%= String(entry.chatLabel || '?').trim().charAt(0).toUpperCase() || '?' %></div>
+                    <div class="deleted-conversation-main">
+                      <div class="deleted-conversation-top-row">
+                        <p class="deleted-conversation-name"><%= entry.chatLabel %></p>
+                      </div>
+                      <p class="deleted-conversation-preview"><%= latestPreview %></p>
+                    </div>
+                    <div class="deleted-conversation-actions">
+                      <div class="deleted-conversation-action-row">
+                        <button
+                          type="button"
+                          class="btn btn-outline btn-sm deleted-icon-btn btn-open-deleted-conversation"
+                          data-chat-id="<%= entry.chatId %>"
+                          aria-label="View conversation"
+                          title="View conversation"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-outline btn-sm deleted-icon-btn deleted-icon-btn-danger btn-delete-deleted-conversation"
+                          data-chat-id="<%= entry.chatId %>"
+                          aria-label="Delete conversation records"
+                          title="Delete conversation records"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                            <path d="M10 11v6M14 11v6"></path>
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+                          </svg>
+                        </button>
+                      </div>
+                      <time class="deleted-conversation-time deleted-conversation-time-side js-local-datetime" data-iso="<%= latest.deletedAt %>">
+                        <%= dayjs(latest.deletedAt).format('DD MMM YYYY HH:mm:ss') %>
+                      </time>
+                    </div>
+                  </article>
+                  <% }) %>
                 </div>
+                <% } %>
               </div>
             </article>
           </section>
@@ -873,6 +1004,7 @@
             <p class="schedule-modal-row"><span class="schedule-modal-label">Time</span><span class="schedule-modal-value" id="scheduleModalTime">-</span></p>
             <p class="schedule-modal-row"><span class="schedule-modal-label">Status</span><span class="schedule-modal-value" id="scheduleModalStatus">-</span></p>
             <p class="schedule-modal-row schedule-modal-row-message"><span class="schedule-modal-label">Message</span><span class="schedule-modal-value" id="scheduleModalMessage">-</span></p>
+            <p class="schedule-modal-row schedule-modal-row-message"><span class="schedule-modal-label">Buttons</span><span class="schedule-modal-value" id="scheduleModalButtons">-</span></p>
           </div>
           <p class="feedback" id="scheduleModalFeedback"></p>
           <div class="schedule-modal-actions">
@@ -883,9 +1015,51 @@
       </div>
     </div>
 
+    <div class="modal" id="deletedConversationModal" hidden>
+      <div class="modal-backdrop" data-close-modal="deleted-conversation"></div>
+      <div class="modal-panel deleted-conversation-modal-panel" role="dialog" aria-modal="true" aria-labelledby="deletedConversationModalTitle">
+        <button type="button" class="modal-close" id="closeDeletedConversationModal" aria-label="Close deleted messages conversation">&times;</button>
+        <article class="wa-preview-card deleted-wa-preview-card">
+          <div class="wa-status-bar">
+            <span class="wa-status-time" id="deletedConversationModalStatusTime">--:--</span>
+            <div class="wa-status-icons" aria-hidden="true">
+              <span>◖◗</span>
+              <span>◉</span>
+              <span>▂▄▆</span>
+            </div>
+          </div>
+
+          <header class="wa-chat-header">
+            <span class="wa-back-icon" aria-hidden="true">&#x2039;</span>
+            <div class="wa-preview-avatar" id="deletedConversationModalAvatar">D</div>
+            <div class="wa-preview-meta">
+              <p class="wa-preview-name" id="deletedConversationModalTitle">Deleted Conversation</p>
+              <p class="wa-preview-status" id="deletedConversationModalSubtitle">Showing deleted message records</p>
+            </div>
+            <div class="wa-header-actions" aria-hidden="true">
+              <span>&#128269;</span>
+              <span>&#128206;</span>
+              <span>&#8942;</span>
+            </div>
+          </header>
+
+          <div class="wa-chat-window deleted-wa-window">
+            <div class="wa-chat-conversation" id="deletedConversationModalMessages"></div>
+            <div class="wa-composer" aria-hidden="true">
+              <div class="wa-composer-icon">&#9786;</div>
+              <div class="wa-composer-input">Deleted messages are read-only</div>
+              <div class="wa-composer-icon">&#128206;</div>
+              <button type="button" class="wa-composer-send" id="deletedConversationModalCloseBtn">Close</button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+
     <script>
       window.__SCHEDULES__ = <%- JSON.stringify(schedules) %>;
       window.__CUSTOM_COMMANDS__ = <%- JSON.stringify(customCommands) %>;
+      window.__DELETED_MESSAGES__ = <%- JSON.stringify(deletedMessagesUi) %>;
     </script>
     <script src="/public/app.js"></script>
   </body>

@@ -31,6 +31,11 @@ function listRecords() {
 }
 
 function addRecord(entry) {
+  const normalizedStatus = String(entry.status || '').trim().toLowerCase();
+  const status = ['recovered', 'partial', 'missing'].includes(normalizedStatus)
+    ? normalizedStatus
+    : 'recovered';
+
   const record = {
     id: Date.now() + Math.random().toString(16).slice(2),
     chatId: String(entry.chatId || ''),
@@ -42,6 +47,14 @@ function addRecord(entry) {
     text: String(entry.text || ''),
     mediaUrl: entry.mediaUrl ? String(entry.mediaUrl) : '',
     fileName: entry.fileName ? String(entry.fileName) : '',
+    mimeType: entry.mimeType ? String(entry.mimeType) : '',
+    durationSeconds: Number.isFinite(Number(entry.durationSeconds))
+      ? Number(entry.durationSeconds)
+      : null,
+    fileSizeBytes: Number.isFinite(Number(entry.fileSizeBytes))
+      ? Number(entry.fileSizeBytes)
+      : null,
+    status,
     originalTimestamp: entry.originalTimestamp || null,
     deletedAt: new Date().toISOString(),
   };
@@ -69,9 +82,29 @@ function clearRecords() {
   persistRecords();
 }
 
+function removeRecordsByChatId(chatId) {
+  const target = String(chatId || '').trim();
+  if (!target) return 0;
+
+  const before = records.length;
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    if (String(records[index]?.chatId || '').trim() === target) {
+      records.splice(index, 1);
+    }
+  }
+
+  const removed = before - records.length;
+  if (removed > 0) {
+    persistRecords();
+  }
+
+  return removed;
+}
+
 module.exports = {
   listRecords,
   addRecord,
   removeRecord,
   clearRecords,
+  removeRecordsByChatId,
 };

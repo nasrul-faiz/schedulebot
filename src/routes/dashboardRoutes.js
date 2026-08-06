@@ -49,6 +49,42 @@ function parseClientLocalDateTime(scheduleAt, timezoneOffsetMinutes) {
   return parsed;
 }
 
+function normalizeButtonsPayload(buttons) {
+  if (buttons == null || buttons === '') return [];
+
+  let parsed = buttons;
+  if (typeof parsed === 'string') {
+    const raw = parsed.trim();
+    if (!raw) return [];
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new Error('buttons must be valid JSON');
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error('buttons must be an array');
+  }
+
+  return parsed
+    .filter((item) => item && typeof item === 'object' && item.name)
+    .map((item) => ({
+      name: String(item.name || '').trim(),
+      buttonParamsJson: typeof item.buttonParamsJson === 'string'
+        ? item.buttonParamsJson
+        : JSON.stringify(item.buttonParamsJson || {}),
+    }))
+    .filter((item) => item.name);
+}
+
+function normalizeSendMediaType(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || raw === 'none') return '';
+  if (raw === 'voice') return 'audio';
+  return raw;
+}
+
 function createDashboardRouter(whatsappService) {
   const router = express.Router();
 
@@ -128,6 +164,31 @@ function createDashboardRouter(whatsappService) {
     }
   });
 
+  router.post('/api/messages/upload-media', upload.single('mediaFile'), (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      const mediaType = normalizeSendMediaType(req.body?.mediaType);
+      const allowedMedia = new Set(['image', 'video', 'audio', 'document']);
+      if (!allowedMedia.has(mediaType)) {
+        return res.status(400).json({ error: 'Invalid media type for upload' });
+      }
+
+      const host = req.get('host');
+      const protocol = req.protocol || 'http';
+      const mediaUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+
+      return res.status(201).json({
+        mediaUrl,
+        fileName: req.file.originalname || req.file.filename,
+      });
+    } catch (error) {
+      return res.status(400).json({ error: error.message || 'Failed to upload media file' });
+    }
+  });
+
   router.put('/api/custom-commands/:trigger', (req, res) => {
     try {
       const updated = customCommandStore.updateCommand(req.params.trigger, req.body || {});
@@ -148,9 +209,22 @@ function createDashboardRouter(whatsappService) {
 
   router.post('/api/schedules', async (req, res, next) => {
     try {
-      const { targetType, targetValue, message, scheduleAt, timezoneOffsetMinutes } = req.body;
+      const {
+        targetType,
+        targetValue,
+        message,
+        buttons,
+        scheduleAt,
+        timezoneOffsetMinutes,
+      } = req.body;
       const normalizedTargetType =
         targetType === 'personal-manual' || targetType === 'personal-chat' ? 'personal' : targetType;
+      let normalizedButtons = [];
+      try {
+        normalizedButtons = normalizeButtonsPayload(buttons);
+      } catch (error) {
+        return res.status(400).json({ error: error.message });
+      }
 
       if (!normalizedTargetType || !targetValue || !message || !scheduleAt) {
         return res.status(400).json({
@@ -173,6 +247,7 @@ function createDashboardRouter(whatsappService) {
         targetType: normalizedTargetType,
         targetValue,
         message,
+        buttons: normalizedButtons,
         scheduleAt: parsed.toISOString(),
       });
 
@@ -184,14 +259,44 @@ function createDashboardRouter(whatsappService) {
 
   router.post('/api/messages/send', async (req, res) => {
     try {
-      const { targetType, targetValue, message } = req.body || {};
+      const {
+        targetType,
+        targetValue,
+        message,
+        buttons,
+        mediaType,
+        mediaUrl,
+        fileName,
+        voiceNote,
+      } = req.body || {};
       const normalizedTargetType =
         targetType === 'personal-manual' || targetType === 'personal-chat' ? 'personal' : targetType;
+      const normalizedButtons = normalizeButtonsPayload(buttons);
+      const cleanMessage = String(message || '').trim();
+      const cleanMediaType = normalizeSendMediaType(mediaType);
+      const cleanMediaUrl = String(mediaUrl || '').trim();
+      const cleanFileName = String(fileName || '').trim();
+      const mediaPayload = cleanMediaType && cleanMediaUrl
+        ? {
+          type: cleanMediaType,
+          url: cleanMediaUrl,
+          fileName: cleanFileName,
+          ptt: cleanMediaType === 'audio' && (voiceNote === true || voiceNote === 'true'),
+        }
+        : null;
 
-      if (!normalizedTargetType || !targetValue || !message) {
+      if (!normalizedTargetType || !targetValue || (!cleanMessage && !normalizedButtons.length && !mediaPayload)) {
         return res.status(400).json({
-          error: 'targetType, targetValue, and message are required',
+          error: 'targetType, targetValue, and at least message, buttons, or media are required',
         });
+      }
+
+      if (cleanMediaType && !cleanMediaUrl) {
+        return res.status(400).json({ error: 'mediaUrl is required when mediaType is set' });
+      }
+
+      if (cleanMediaType && !['image', 'video', 'audio', 'document'].includes(cleanMediaType)) {
+        return res.status(400).json({ error: 'Invalid mediaType' });
       }
 
       if (!['personal', 'group'].includes(normalizedTargetType)) {
@@ -201,7 +306,11 @@ function createDashboardRouter(whatsappService) {
       await whatsappService.sendMessage(
         normalizedTargetType,
         String(targetValue).trim(),
-        String(message).trim()
+        cleanMessage,
+        {
+          buttons: normalizedButtons,
+          media: mediaPayload,
+        }
       );
 
       return res.status(200).json({ ok: true });
@@ -241,6 +350,14 @@ function createDashboardRouter(whatsappService) {
     return res.status(204).send();
   });
 
+  router.delete('/api/deleted-messages/chat/:chatId', (req, res) => {
+    const removedCount = deletedMessageStore.removeRecordsByChatId(req.params.chatId);
+    if (!removedCount) {
+      return res.status(404).json({ error: 'Conversation records not found' });
+    }
+    return res.status(204).send();
+  });
+
   router.delete('/api/deleted-messages', (req, res) => {
     deletedMessageStore.clearRecords();
     return res.status(204).send();
@@ -273,6 +390,32 @@ function createDashboardRouter(whatsappService) {
   router.get('/api/whatsapp/state', (req, res) => {
     const waState = whatsappService.getConnectionState();
     return res.json(waState);
+  });
+
+  router.get('/api/inbox/conversations', async (req, res, next) => {
+    try {
+      const conversations = await whatsappService.listInboxConversations();
+      return res.json({ conversations });
+    } catch (error) {
+      if (error.message === 'WhatsApp client is not ready') {
+        return res.status(409).json({ error: error.message });
+      }
+      return next(error);
+    }
+  });
+
+  router.get('/api/inbox/conversations/:chatId/messages', async (req, res, next) => {
+    try {
+      const chatId = String(req.params.chatId || '').trim();
+      const limit = Number(req.query?.limit || 120);
+      const messages = await whatsappService.getInboxMessages(chatId, limit);
+      return res.json({ messages });
+    } catch (error) {
+      if (error.message === 'WhatsApp client is not ready') {
+        return res.status(409).json({ error: error.message });
+      }
+      return next(error);
+    }
   });
 
   router.post('/api/whatsapp/pairing-code', async (req, res) => {

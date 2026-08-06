@@ -1340,22 +1340,296 @@ tbody tr:hover {
   display: inline-flex;
 }
 
-.deleted-messages-table .deleted-content-cell {
-  max-width: 520px;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  line-height: 1.4;
+.inbox-layout {
+  display: grid;
+  grid-template-columns: 350px 1fr;
+  gap: 16px;
+}
+
+.inbox-list-card,
+.inbox-thread-card {
+  min-height: 620px;
+}
+
+.inbox-thread-content {
+  height: 100%;
+}
+
+.inbox-conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inbox-conversation-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease;
+}
+
+.inbox-conversation-item:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.inbox-conversation-item.is-active {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  background: color-mix(in srgb, var(--primary-soft) 55%, var(--surface));
+}
+
+.inbox-conversation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inbox-conversation-name {
+  margin: 0;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inbox-conversation-time {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.inbox-conversation-preview {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inbox-message-list {
+  min-height: 520px;
+  max-height: 70vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px;
+}
+
+.inbox-message-wrap {
+  display: flex;
+}
+
+.inbox-message-wrap.is-me {
+  justify-content: flex-end;
+}
+
+.inbox-message-bubble {
+  max-width: min(85%, 520px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: var(--surface);
+}
+
+.inbox-message-wrap.is-me .inbox-message-bubble {
+  background: color-mix(in srgb, var(--primary-soft) 50%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+}
+
+.inbox-message-type {
+  margin: 0 0 4px;
+  font-size: 10px;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.inbox-message-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--foreground);
+  white-space: pre-wrap;
   word-break: break-word;
 }
 
-.deleted-messages-table .deleted-content-cell a {
-  font-weight: 500;
+.inbox-media-wrap {
+  margin-top: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-2) 75%, #111b21);
+  border: 1px solid var(--border);
 }
 
-.deleted-messages-table .deleted-content-cell .muted {
-  display: inline-block;
-  margin-top: 4px;
+.inbox-media-image,
+.inbox-media-video {
+  width: 100%;
+  max-height: 320px;
+  display: block;
+  object-fit: contain;
+  background: #111b21;
+}
+
+.inbox-media-audio {
+  width: 100%;
+  display: block;
+}
+
+.inbox-media-link {
+  display: inline-flex;
+  padding: 8px 10px;
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.inbox-message-time {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+  text-align: right;
+}
+
+.deleted-conversation-list {
+  display: grid;
+  gap: 14px;
+  padding: 4px 0;
+}
+
+.deleted-conversation-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 94%, var(--primary-soft)), color-mix(in srgb, var(--card) 88%, var(--primary-soft)));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  transition: border-color var(--motion-fast) ease, transform var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+
+.deleted-conversation-item:hover {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.12);
+}
+
+.deleted-conversation-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--primary) 30%, var(--card)), color-mix(in srgb, var(--primary) 10%, var(--card)));
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+.deleted-conversation-main {
+  min-width: 0;
+}
+
+.deleted-conversation-top-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.deleted-conversation-name {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.deleted-conversation-time {
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.deleted-conversation-preview {
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deleted-conversation-actions {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+
+.deleted-conversation-action-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.deleted-icon-btn {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+
+.deleted-icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.deleted-icon-btn:hover {
+  background: transparent;
+  border: none;
+  color: var(--primary);
+}
+
+.deleted-icon-btn:focus-visible {
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.deleted-icon-btn-danger {
+  color: var(--danger);
+}
+
+.deleted-icon-btn-danger:hover {
+  background: transparent;
+  border: none;
+  color: var(--danger);
+}
+
+.deleted-conversation-time-side {
+  font-size: 10.5px;
+  text-align: center;
+  line-height: 1.25;
 }
 
 .command-content-cell {
@@ -1449,6 +1723,68 @@ tbody tr:hover {
   background: var(--card);
   border: 1px solid var(--border);
   box-shadow: 0 26px 52px rgba(0, 0, 0, 0.42);
+}
+
+.deleted-conversation-modal-panel {
+  width: min(100%, 640px);
+  padding: 12px;
+}
+
+.deleted-wa-preview-card {
+  border-radius: 16px;
+}
+
+.deleted-wa-window {
+  min-height: 560px;
+}
+
+.deleted-wa-message-wrap {
+  display: flex;
+  padding-right: 6px;
+}
+
+.deleted-wa-message-bubble {
+  width: min(100%, 430px);
+  padding: 10px 11px 8px;
+}
+
+.deleted-wa-media-wrap {
+  margin: 2px 0 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #111b21;
+}
+
+.deleted-wa-media-image,
+.deleted-wa-media-video {
+  width: 100%;
+  max-height: 320px;
+  display: block;
+  object-fit: contain;
+  background: #111b21;
+}
+
+.deleted-wa-media-audio {
+  width: 100%;
+  display: block;
+  background: #f6f8f9;
+}
+
+.deleted-wa-sender {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1f6a5a;
+}
+
+.deleted-wa-media-link {
+  display: inline-flex;
+  margin: 0 0 8px;
+  color: #075e54;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .schedule-modal-grid {
@@ -1896,6 +2232,10 @@ tbody tr:hover {
     min-height: 420px;
   }
 
+  .deleted-wa-window {
+    min-height: 470px;
+  }
+
   .wa-user-bubble,
   .wa-preview-bubble {
     width: min(100%, 300px);
@@ -1971,6 +2311,19 @@ tbody tr:hover {
 
   .grid.two-cols {
     grid-template-columns: 1fr;
+  }
+
+  .inbox-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .inbox-list-card,
+  .inbox-thread-card {
+    min-height: 0;
+  }
+
+  .inbox-message-list {
+    max-height: 55vh;
   }
 }
 
@@ -2064,6 +2417,39 @@ tbody tr:hover {
 
   .command-content-cell {
     min-width: 220px;
+  }
+
+  .deleted-conversation-item {
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .deleted-conversation-item .btn {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: 2px;
+  }
+
+  .deleted-conversation-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    align-items: flex-end;
+    width: 100%;
+  }
+
+  .deleted-conversation-action-row {
+    justify-content: flex-end;
+  }
+
+  .deleted-conversation-actions .deleted-icon-btn {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+  }
+
+  .deleted-conversation-time-side {
+    text-align: right;
   }
 
   .modal {

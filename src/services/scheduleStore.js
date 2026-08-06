@@ -6,11 +6,16 @@ let idCounter = 1;
 let initialized = false;
 
 function toSchedule(row) {
+  const parsedButtons = Array.isArray(row.buttons_json)
+    ? row.buttons_json
+    : [];
+
   return {
     id: Number(row.id),
     targetType: row.target_type,
     targetValue: row.target_value,
     message: row.message,
+    buttons: parsedButtons,
     scheduleAt: row.schedule_at,
     status: row.status,
     createdAt: row.created_at,
@@ -29,6 +34,7 @@ async function init() {
         target_type TEXT NOT NULL,
         target_value TEXT NOT NULL,
         message TEXT NOT NULL,
+        buttons_json JSONB NOT NULL DEFAULT '[]'::jsonb,
         schedule_at TIMESTAMPTZ NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -36,6 +42,12 @@ async function init() {
         error TEXT
       )`
     );
+
+    await postgres.query(
+      `ALTER TABLE schedules
+       ADD COLUMN IF NOT EXISTS buttons_json JSONB NOT NULL DEFAULT '[]'::jsonb`
+    );
+
     console.log('[ScheduleStore] PostgreSQL storage is enabled');
   } else {
     console.log('[ScheduleStore] DATABASE_URL not set, using in-memory schedule storage');
@@ -44,20 +56,32 @@ async function init() {
   initialized = true;
 }
 
-async function createSchedule({ targetType, targetValue, message, scheduleAt }) {
+async function createSchedule({ targetType, targetValue, message, buttons, scheduleAt }) {
   await init();
+
+  const normalizedButtons = Array.isArray(buttons)
+    ? buttons
+      .filter((item) => item && typeof item === 'object' && item.name)
+      .map((item) => ({
+        name: String(item.name || '').trim(),
+        buttonParamsJson: typeof item.buttonParamsJson === 'string'
+          ? item.buttonParamsJson
+          : JSON.stringify(item.buttonParamsJson || {}),
+      }))
+      .filter((item) => item.name)
+    : [];
 
   if (postgres.hasDatabase()) {
     const result = await postgres.query(
-      `INSERT INTO schedules (target_type, target_value, message, schedule_at, status)
-       VALUES ($1, $2, $3, $4, 'pending')
-       RETURNING id, target_type, target_value, message,
+      `INSERT INTO schedules (target_type, target_value, message, buttons_json, schedule_at, status)
+       VALUES ($1, $2, $3, $4::jsonb, $5, 'pending')
+       RETURNING id, target_type, target_value, message, buttons_json,
                  schedule_at::text AS schedule_at,
                  status,
                  created_at::text AS created_at,
                  sent_at::text AS sent_at,
                  error`,
-      [targetType, targetValue, message, scheduleAt]
+      [targetType, targetValue, message, JSON.stringify(normalizedButtons), scheduleAt]
     );
     return toSchedule(result.rows[0]);
   }
@@ -67,6 +91,7 @@ async function createSchedule({ targetType, targetValue, message, scheduleAt }) 
     targetType,
     targetValue,
     message,
+    buttons: normalizedButtons,
     scheduleAt,
     status: 'pending',
     createdAt: new Date().toISOString(),
@@ -84,6 +109,7 @@ async function listSchedules() {
   if (postgres.hasDatabase()) {
     const result = await postgres.query(
       `SELECT id, target_type, target_value, message,
+              buttons_json,
               schedule_at::text AS schedule_at,
               status,
               created_at::text AS created_at,
@@ -109,6 +135,7 @@ async function getPendingSchedules(now = new Date()) {
     const nowIso = dayjs(now).toISOString();
     const result = await postgres.query(
       `SELECT id, target_type, target_value, message,
+              buttons_json,
               schedule_at::text AS schedule_at,
               status,
               created_at::text AS created_at,
@@ -137,7 +164,7 @@ async function markSent(id) {
       `UPDATE schedules
        SET status = 'sent', sent_at = NOW(), error = NULL
        WHERE id = $1
-       RETURNING id, target_type, target_value, message,
+       RETURNING id, target_type, target_value, message, buttons_json,
                  schedule_at::text AS schedule_at,
                  status,
                  created_at::text AS created_at,
@@ -165,7 +192,7 @@ async function markFailed(id, errorMessage) {
       `UPDATE schedules
        SET status = 'failed', error = $2
        WHERE id = $1
-       RETURNING id, target_type, target_value, message,
+       RETURNING id, target_type, target_value, message, buttons_json,
                  schedule_at::text AS schedule_at,
                  status,
                  created_at::text AS created_at,

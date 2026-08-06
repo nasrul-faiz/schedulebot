@@ -16,7 +16,12 @@ class SchedulerService {
 
         for (const item of dueItems) {
           try {
-            await this.whatsappService.sendMessage(item.targetType, item.targetValue, item.message);
+            await this.whatsappService.sendMessage(
+              item.targetType,
+              item.targetValue,
+              item.message,
+              { buttons: item.buttons }
+            );
             await scheduleStore.markSent(item.id);
             console.log(
               `[SCHEDULER] Sent #${item.id} to ${item.targetType}:${item.targetValue}`

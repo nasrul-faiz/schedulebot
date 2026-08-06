@@ -293,6 +293,250 @@ function extractTitleFromPayload(data) {
   return '';
 }
 
+function toMillis(value) {
+  if (value == null) return 0;
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value < 1e12 ? Math.floor(value * 1000) : Math.floor(value);
+  }
+
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return numeric < 1e12 ? Math.floor(numeric * 1000) : Math.floor(numeric);
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  if (typeof value === 'bigint') {
+    const numeric = Number(value);
+    return Number.isFinite(numeric)
+      ? (numeric < 1e12 ? Math.floor(numeric * 1000) : Math.floor(numeric))
+      : 0;
+  }
+
+  if (typeof value === 'object') {
+    if (typeof value.toNumber === 'function') {
+      const numeric = Number(value.toNumber());
+      if (Number.isFinite(numeric)) {
+        return numeric < 1e12 ? Math.floor(numeric * 1000) : Math.floor(numeric);
+      }
+    }
+
+    if (typeof value.low === 'number') {
+      const numeric = Number(value.low);
+      if (Number.isFinite(numeric)) {
+        return numeric < 1e12 ? Math.floor(numeric * 1000) : Math.floor(numeric);
+      }
+    }
+  }
+
+  return 0;
+}
+
+function getChatTypeFromJid(jid) {
+  const raw = String(jid || '').trim();
+  if (raw.endsWith('@g.us')) return 'group';
+  if (raw.endsWith('@s.whatsapp.net')) return 'personal';
+  return 'other';
+}
+
+function normalizeInboxMediaUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/')) return raw;
+  return '';
+}
+
+function summarizeMessageForInbox(content) {
+  if (!content || typeof content !== 'object') {
+    return {
+      text: '',
+      type: 'unknown',
+      mediaUrl: '',
+      fileName: '',
+      mimeType: '',
+      isVoiceNote: false,
+      durationSeconds: null,
+    };
+  }
+
+  const imageMessage = content.imageMessage || null;
+  const videoMessage = content.videoMessage || null;
+  const audioMessage = content.audioMessage || null;
+  const documentMessage = content.documentMessage || null;
+
+  let detectedType = 'text';
+  let mediaUrl = '';
+  let fileName = '';
+  let mimeType = '';
+  let isVoiceNote = false;
+  let durationSeconds = null;
+
+  if (imageMessage) {
+    detectedType = 'image';
+    mediaUrl = normalizeInboxMediaUrl(imageMessage.url);
+    mimeType = String(imageMessage.mimetype || '').trim();
+  } else if (videoMessage) {
+    detectedType = 'video';
+    mediaUrl = normalizeInboxMediaUrl(videoMessage.url);
+    mimeType = String(videoMessage.mimetype || '').trim();
+    durationSeconds = Number.isFinite(Number(videoMessage.seconds))
+      ? Number(videoMessage.seconds)
+      : null;
+  } else if (audioMessage) {
+    isVoiceNote = Boolean(audioMessage.ptt);
+    detectedType = isVoiceNote ? 'voice' : 'audio';
+    mediaUrl = normalizeInboxMediaUrl(audioMessage.url);
+    mimeType = String(audioMessage.mimetype || '').trim();
+    durationSeconds = Number.isFinite(Number(audioMessage.seconds))
+      ? Number(audioMessage.seconds)
+      : null;
+  } else if (documentMessage) {
+    detectedType = 'document';
+    mediaUrl = normalizeInboxMediaUrl(documentMessage.url);
+    fileName = String(documentMessage.fileName || '').trim();
+    mimeType = String(documentMessage.mimetype || '').trim();
+  }
+
+  const textCandidates = [
+    content.conversation,
+    content.extendedTextMessage?.text,
+    content.imageMessage?.caption,
+    content.videoMessage?.caption,
+    content.documentMessage?.caption,
+    content.buttonsResponseMessage?.selectedDisplayText,
+    content.buttonsResponseMessage?.selectedButtonId,
+    content.templateButtonReplyMessage?.selectedDisplayText,
+    content.templateButtonReplyMessage?.selectedId,
+    content.listResponseMessage?.title,
+    content.listResponseMessage?.singleSelectReply?.selectedRowId,
+  ];
+
+  for (const candidate of textCandidates) {
+    const value = String(candidate || '').trim();
+    if (value) {
+      return {
+        text: value,
+        type: detectedType === 'text' ? 'text' : detectedType,
+        mediaUrl,
+        fileName,
+        mimeType,
+        isVoiceNote,
+        durationSeconds,
+      };
+    }
+  }
+
+  if (imageMessage) {
+    return {
+      text: '[Image]',
+      type: 'image',
+      mediaUrl,
+      fileName,
+      mimeType,
+      isVoiceNote,
+      durationSeconds,
+    };
+  }
+
+  if (videoMessage) {
+    return {
+      text: '[Video]',
+      type: 'video',
+      mediaUrl,
+      fileName,
+      mimeType,
+      isVoiceNote,
+      durationSeconds,
+    };
+  }
+
+  if (audioMessage) {
+    return {
+      text: isVoiceNote ? '[Voice Note]' : '[Audio]',
+      type: isVoiceNote ? 'voice' : 'audio',
+      mediaUrl,
+      fileName,
+      mimeType,
+      isVoiceNote,
+      durationSeconds,
+    };
+  }
+
+  if (documentMessage) {
+    return {
+      text: fileName || '[Document]',
+      type: 'document',
+      mediaUrl,
+      fileName,
+      mimeType,
+      isVoiceNote,
+      durationSeconds,
+    };
+  }
+
+  if (content.stickerMessage) {
+    return {
+      text: '[Sticker]',
+      type: 'sticker',
+      mediaUrl: '',
+      fileName: '',
+      mimeType: '',
+      isVoiceNote: false,
+      durationSeconds: null,
+    };
+  }
+
+  if (content.contactMessage || content.contactsArrayMessage) {
+    return {
+      text: '[Contact]',
+      type: 'contact',
+      mediaUrl: '',
+      fileName: '',
+      mimeType: '',
+      isVoiceNote: false,
+      durationSeconds: null,
+    };
+  }
+
+  if (content.locationMessage || content.liveLocationMessage) {
+    return {
+      text: '[Location]',
+      type: 'location',
+      mediaUrl: '',
+      fileName: '',
+      mimeType: '',
+      isVoiceNote: false,
+      durationSeconds: null,
+    };
+  }
+
+  if (content.pollCreationMessage || content.pollCreationMessageV3) {
+    return {
+      text: '[Poll]',
+      type: 'poll',
+      mediaUrl: '',
+      fileName: '',
+      mimeType: '',
+      isVoiceNote: false,
+      durationSeconds: null,
+    };
+  }
+
+  return {
+    text: '[Unsupported message]',
+    type: 'unknown',
+    mediaUrl: '',
+    fileName: '',
+    mimeType: '',
+    isVoiceNote: false,
+    durationSeconds: null,
+  };
+}
+
 class WhatsAppService {
   constructor() {
     this.sock = null;
@@ -309,6 +553,55 @@ class WhatsAppService {
     this.pairingCode = null;
     this.isRequestingPairingCode = false;
     this.store = null;
+    this.recentDeletedCaptureIds = [];
+    this.recentDeletedCaptureLimit = 200;
+    this.recentMessageCache = new Map();
+    this.recentMessageCacheWindowMs = 5 * 60 * 1000;
+    this.recentMessageCacheLimit = 5000;
+  }
+
+  makeRecentMessageCacheKey(chatId, messageId) {
+    const chat = String(chatId || '').trim();
+    const id = String(messageId || '').trim();
+    if (!chat || !id) return '';
+    return `${chat}|${id}`;
+  }
+
+  cacheRecentMessage(chatId, message) {
+    const cacheKey = this.makeRecentMessageCacheKey(chatId, message?.key?.id);
+    if (!cacheKey || !message?.message) return;
+
+    this.recentMessageCache.set(cacheKey, {
+      message: message.message,
+      pushName: message.pushName || '',
+      messageTimestamp: message.messageTimestamp,
+      participant: message.key?.participant || '',
+      cachedAt: Date.now(),
+    });
+
+    if (this.recentMessageCache.size > this.recentMessageCacheLimit) {
+      const now = Date.now();
+      for (const [storedKey, entry] of this.recentMessageCache.entries()) {
+        if ((now - Number(entry?.cachedAt || 0)) > this.recentMessageCacheWindowMs) {
+          this.recentMessageCache.delete(storedKey);
+        }
+      }
+    }
+  }
+
+  getRecentMessage(chatId, messageId) {
+    const cacheKey = this.makeRecentMessageCacheKey(chatId, messageId);
+    if (!cacheKey) return null;
+
+    const entry = this.recentMessageCache.get(cacheKey);
+    if (!entry) return null;
+
+    if ((Date.now() - Number(entry.cachedAt || 0)) > this.recentMessageCacheWindowMs) {
+      this.recentMessageCache.delete(cacheKey);
+      return null;
+    }
+
+    return entry;
   }
 
   logInteractiveDebug(message, details = null) {
@@ -611,7 +904,7 @@ class WhatsAppService {
     return digitsOnly;
   }
 
-  async sendMessage(targetType, target, message) {
+  async sendMessage(targetType, target, message, options = {}) {
     if (!this.sock || !this.ready) {
       throw new Error('WhatsApp client is not ready');
     }
@@ -627,7 +920,65 @@ class WhatsAppService {
     }
 
     console.log(`[WA] Sending message to ${chatId}`);
-    await this.sock.sendMessage(chatId, { text: String(message || '') });
+    const text = String(message || '').trim();
+    const buttons = Array.isArray(options?.buttons)
+      ? options.buttons
+      : [];
+    const media = options?.media && typeof options.media === 'object'
+      ? options.media
+      : null;
+
+    const mediaType = String(media?.type || '').trim();
+    const mediaUrl = String(media?.url || '').trim();
+    const hasMedia = Boolean(mediaType && mediaUrl);
+
+    if (hasMedia) {
+      const mediaSource = { url: mediaUrl };
+
+      if (buttons.length && !(mediaType === 'audio' && Boolean(media?.ptt))) {
+        await sendInteractiveButtons(this.sock, chatId, {
+          text,
+          buttons,
+          media: {
+            type: mediaType,
+            source: mediaSource,
+            fileName: String(media?.fileName || 'file').trim() || 'file',
+            mimetype: String(media?.mimetype || '').trim() || undefined,
+          },
+        });
+        return;
+      }
+
+      const payload = { [mediaType]: mediaSource };
+
+      if (text) {
+        payload.caption = text;
+      }
+
+      if (mediaType === 'audio') {
+        payload.mimetype = String(media?.mimetype || 'audio/mpeg').trim() || 'audio/mpeg';
+        payload.ptt = Boolean(media?.ptt);
+      } else if (mediaType === 'document') {
+        payload.fileName = String(media?.fileName || 'file').trim() || 'file';
+        payload.mimetype = String(media?.mimetype || 'application/octet-stream').trim() || 'application/octet-stream';
+      }
+
+      await this.sock.sendMessage(chatId, payload);
+
+      // Voice-note payload cannot be mixed with interactive buttons reliably.
+      // For this case we send buttons as a follow-up text message.
+      if (buttons.length) {
+        await sendInteractiveButtons(this.sock, chatId, { text: text || 'Choose an option:', buttons });
+      }
+      return;
+    }
+
+    if (buttons.length) {
+      await sendInteractiveButtons(this.sock, chatId, { text, buttons });
+      return;
+    }
+
+    await this.sock.sendMessage(chatId, { text });
   }
 
   async handleIncomingMessages(event) {
@@ -640,6 +991,24 @@ class WhatsAppService {
       if (!chatId) continue;
 
       const content = normalizeMessageContent(message.message) || message.message;
+
+      if (!content?.protocolMessage) {
+        this.cacheRecentMessage(chatId, message);
+      }
+
+      const revokeKey = content?.protocolMessage?.key;
+      const revokeType = content?.protocolMessage?.type;
+
+      if (revokeKey?.id && (revokeType === 0 || revokeType === 'REVOKE')) {
+        const revokedChatId = revokeKey.remoteJid || chatId;
+        const revokedMessageId = revokeKey.id;
+        const captureParticipant = revokeKey.participant || message.key?.participant || '';
+        await this.captureDeletedMessage(revokedChatId, revokedMessageId, {
+          remoteJid: revokedChatId,
+          participant: captureParticipant,
+        });
+        continue;
+      }
 
       const interactiveSelectionId = this.extractInteractiveSelectionId(content);
       const text = this.extractMessageText(content);
@@ -1363,35 +1732,95 @@ class WhatsAppService {
     if (!this.sock || !Array.isArray(updates)) return;
 
     for (const item of updates) {
-      const isRevoked =
+      const updateMessage = item?.update?.message;
+      const protocolMessage = updateMessage?.protocolMessage;
+      const protocolKey = protocolMessage?.key;
+      const protocolIsRevoke =
+        Boolean(protocolKey?.id)
+        && (protocolMessage?.type === 0 || protocolMessage?.type === 'REVOKE');
+
+      if (protocolIsRevoke) {
+        const chatId = protocolKey.remoteJid || item.key?.remoteJid;
+        const messageId = protocolKey.id;
+        const captureParticipant = protocolKey.participant || item.key?.participant || '';
+        if (!chatId || !messageId) continue;
+
+        await this.captureDeletedMessage(chatId, messageId, {
+          remoteJid: chatId,
+          participant: captureParticipant,
+        });
+        continue;
+      }
+
+      const isLegacyRevoke =
         item?.update?.messageStubType === baileys.WAMessageStubType?.REVOKE ||
         (item?.update && 'message' in item.update && item.update.message === null);
-
-      if (!isRevoked) continue;
+      if (!isLegacyRevoke) continue;
 
       const chatId = item.key?.remoteJid;
       const messageId = item.key?.id;
       if (!chatId || !messageId) continue;
 
-      await this.saveDeletedMessage(chatId, messageId, item.key);
+      await this.captureDeletedMessage(chatId, messageId, item.key || {
+        remoteJid: chatId,
+      });
     }
+  }
+
+  hasCapturedDeletedMessage(chatId, messageId) {
+    const key = `${String(chatId || '')}::${String(messageId || '')}`;
+    if (!key || key === '::') return false;
+
+    if (this.recentDeletedCaptureIds.includes(key)) {
+      return true;
+    }
+
+    this.recentDeletedCaptureIds.unshift(key);
+    if (this.recentDeletedCaptureIds.length > this.recentDeletedCaptureLimit) {
+      this.recentDeletedCaptureIds.length = this.recentDeletedCaptureLimit;
+    }
+
+    return false;
+  }
+
+  async captureDeletedMessage(chatId, messageId, key) {
+    if (this.hasCapturedDeletedMessage(chatId, messageId)) return;
+    await this.saveDeletedMessage(chatId, messageId, key);
   }
 
   async saveDeletedMessage(chatId, messageId, key) {
     try {
-      const original = await this.store?.loadMessage?.(chatId, messageId);
-      if (!original?.message) return;
-
-      const content = normalizeMessageContent(original.message) || original.message;
-      const senderId = key?.participant || (chatId.endsWith('@g.us') ? '' : chatId);
-      const senderName = original.pushName || '';
+      const cached = this.getRecentMessage(chatId, messageId);
+      const original = cached || (await this.store?.loadMessage?.(chatId, messageId));
       const isGroup = chatId.endsWith('@g.us');
-
       let chatName = '';
       if (isGroup) {
         const chat = this.store?.chats?.get?.(chatId);
         chatName = chat?.name || chat?.subject || '';
       }
+
+      const senderId = key?.participant || original?.participant || (chatId.endsWith('@g.us') ? '' : chatId);
+      if (!original?.message) {
+        deletedMessageStore.addRecord({
+          chatId,
+          chatName,
+          senderId,
+          senderName: '',
+          isGroup,
+          type: 'text',
+          text: '[Deleted message detected, but original content was not cached]',
+          status: 'missing',
+          mimeType: '',
+          durationSeconds: null,
+          fileSizeBytes: null,
+          originalTimestamp: null,
+        });
+        console.log(`[WA] Saved deleted message placeholder from ${chatId}`);
+        return;
+      }
+
+      const content = normalizeMessageContent(original.message) || original.message;
+      const senderName = original.pushName || '';
 
       const record = {
         chatId,
@@ -1425,6 +1854,9 @@ class WhatsAppService {
         };
         const mediaType = mediaTypeMap[mediaField];
         const mediaMessage = content[mediaField];
+        const resolvedMediaType = mediaField === 'audioMessage' && mediaMessage?.ptt
+          ? 'voice'
+          : mediaType;
 
         try {
           const downloadType = mediaType === 'sticker' ? 'sticker' : mediaType;
@@ -1436,26 +1868,47 @@ class WhatsAppService {
             image: '.jpg',
             video: '.mp4',
             audio: '.ogg',
+            voice: '.ogg',
             document: '',
             sticker: '.webp',
           };
-          const ext = extMap[mediaType] || '';
+          const ext = extMap[resolvedMediaType] || extMap[mediaType] || '';
           const fileName = `deleted-${Date.now()}${ext}`;
           fs.mkdirSync(uploadDir, { recursive: true });
           fs.writeFileSync(path.join(uploadDir, fileName), buffer);
 
-          record.type = mediaType;
+          record.type = resolvedMediaType;
           record.mediaUrl = `/uploads/${fileName}`;
           record.fileName = mediaMessage.fileName || fileName;
+          record.mimeType = String(mediaMessage.mimetype || '').trim();
+          record.durationSeconds = Number.isFinite(Number(mediaMessage.seconds))
+            ? Number(mediaMessage.seconds)
+            : null;
+          record.fileSizeBytes = Number.isFinite(Number(mediaMessage.fileLength))
+            ? Number(mediaMessage.fileLength)
+            : null;
           record.text = text;
+          record.status = 'recovered';
         } catch (downloadError) {
           console.error('[WA] Failed to download deleted media:', downloadError.message);
-          record.type = mediaType;
+          record.type = resolvedMediaType;
+          record.mimeType = String(mediaMessage.mimetype || '').trim();
+          record.durationSeconds = Number.isFinite(Number(mediaMessage.seconds))
+            ? Number(mediaMessage.seconds)
+            : null;
+          record.fileSizeBytes = Number.isFinite(Number(mediaMessage.fileLength))
+            ? Number(mediaMessage.fileLength)
+            : null;
           record.text = text || '[Media could not be recovered]';
+          record.status = text ? 'partial' : 'missing';
         }
       } else {
         record.type = 'text';
+        record.mimeType = '';
+        record.durationSeconds = null;
+        record.fileSizeBytes = null;
         record.text = text || '[Unsupported message type]';
+        record.status = text ? 'recovered' : 'missing';
       }
 
       deletedMessageStore.addRecord(record);
@@ -1498,6 +1951,158 @@ class WhatsAppService {
     if (caption || hasButtons) {
       await sendInteractiveButtons(this.sock, chatId, { text: caption, buttons: command.buttons }, options);
     }
+  }
+
+  getStoreMessagesByJid(chatId) {
+    const storeMessages = this.store?.messages;
+    if (!storeMessages || !chatId) return [];
+
+    const byDirectKey = storeMessages[chatId];
+    const byGetFunction = typeof storeMessages.get === 'function'
+      ? storeMessages.get(chatId)
+      : null;
+    const collection = byDirectKey || byGetFunction;
+    if (!collection) return [];
+
+    if (Array.isArray(collection)) return collection;
+    if (Array.isArray(collection.array)) return collection.array;
+    if (typeof collection.all === 'function') {
+      const allItems = collection.all();
+      return Array.isArray(allItems) ? allItems : [];
+    }
+
+    return [];
+  }
+
+  async listInboxConversations() {
+    if (!this.sock || !this.ready) {
+      throw new Error('WhatsApp client is not ready');
+    }
+
+    const chats = this.store?.chats?.all?.() || [];
+    const contacts = this.store?.contacts || {};
+    const normalizedSelf = normalizeConnectedJid(this.sock?.user?.id || '');
+    const merged = [];
+
+    for (const chat of chats) {
+      const chatId = String(chat?.id || '').trim();
+      const chatType = getChatTypeFromJid(chatId);
+      if (chatType === 'other') continue;
+      if (chatId === normalizedSelf) continue;
+
+      const rawMessages = this.getStoreMessagesByJid(chatId);
+      const mappedMessages = rawMessages
+        .map((entry) => {
+          const content = normalizeMessageContent(entry?.message) || entry?.message;
+          if (!content) return null;
+
+          const summary = summarizeMessageForInbox(content);
+          const ts = toMillis(entry?.messageTimestamp || entry?.key?.timestamp || chat?.conversationTimestamp);
+
+          return {
+            fromMe: Boolean(entry?.key?.fromMe),
+            text: summary.text,
+            type: summary.type,
+            timestampMs: ts,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.timestampMs - b.timestampMs);
+
+      const lastMessage = mappedMessages[mappedMessages.length - 1] || null;
+      const chatTs = toMillis(chat?.conversationTimestamp || chat?.lastMessageRecvTimestamp || chat?.lastMsgTimestamp);
+      const lastTimestampMs = Math.max(chatTs, lastMessage?.timestampMs || 0);
+
+      const contact = contacts[chatId] || {};
+      const fallbackName = chatType === 'group'
+        ? 'Unnamed Group'
+        : (extractPhoneFromJid(chatId) || 'Unnamed Contact');
+
+      const name = String(
+        chat?.name
+        || chat?.subject
+        || chat?.notify
+        || chat?.pushName
+        || contact?.name
+        || contact?.notify
+        || contact?.verifiedName
+        || fallbackName
+      ).trim() || fallbackName;
+
+      merged.push({
+        chatId,
+        chatType,
+        name,
+        unreadCount: Number(chat?.unreadCount || 0),
+        lastMessageText: lastMessage?.text || '',
+        lastMessageType: lastMessage?.type || 'unknown',
+        lastMessageFromMe: Boolean(lastMessage?.fromMe),
+        lastTimestamp: lastTimestampMs ? new Date(lastTimestampMs).toISOString() : null,
+      });
+    }
+
+    return merged
+      .sort((a, b) => toMillis(b.lastTimestamp) - toMillis(a.lastTimestamp));
+  }
+
+  async getInboxMessages(chatId, limit = 100) {
+    if (!this.sock || !this.ready) {
+      throw new Error('WhatsApp client is not ready');
+    }
+
+    const cleanChatId = String(chatId || '').trim();
+    if (!cleanChatId) {
+      throw new Error('chatId is required');
+    }
+
+    const cappedLimit = Math.max(1, Math.min(Number(limit) || 100, 500));
+    const contacts = this.store?.contacts || {};
+    const rawMessages = this.getStoreMessagesByJid(cleanChatId);
+    const conversation = rawMessages
+      .map((entry) => {
+        const content = normalizeMessageContent(entry?.message) || entry?.message;
+        if (!content) return null;
+
+        const summary = summarizeMessageForInbox(content);
+        const timestampMs = toMillis(entry?.messageTimestamp || entry?.key?.timestamp);
+
+        const participantJid = String(
+          entry?.key?.participant
+          || entry?.participant
+          || ''
+        ).trim();
+        const participantContact = participantJid ? (contacts[participantJid] || {}) : {};
+        const participantName = participantJid
+          ? String(
+            participantContact?.name
+            || participantContact?.notify
+            || participantContact?.verifiedName
+            || extractPhoneFromJid(participantJid)
+            || participantJid
+          ).trim()
+          : '';
+
+        return {
+          id: String(entry?.key?.id || '').trim() || `${timestampMs}-${Math.random().toString(36).slice(2, 7)}`,
+          fromMe: Boolean(entry?.key?.fromMe),
+          text: summary.text,
+          type: summary.type,
+          mediaUrl: String(summary.mediaUrl || '').trim(),
+          fileName: String(summary.fileName || '').trim(),
+          mimeType: String(summary.mimeType || '').trim(),
+          isVoiceNote: Boolean(summary.isVoiceNote),
+          durationSeconds: Number.isFinite(Number(summary.durationSeconds))
+            ? Number(summary.durationSeconds)
+            : null,
+          timestamp: timestampMs ? new Date(timestampMs).toISOString() : null,
+          participantJid,
+          participantName,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
+
+    return conversation.slice(-cappedLimit);
   }
 
   async listGroups() {
