@@ -85,6 +85,9 @@ const requestPairingBtn = document.getElementById('requestPairingBtn');
 const pairingFeedback = document.getElementById('pairing-feedback');
 const pairingCodeWrap = document.getElementById('pairing-code-wrap');
 const pairingCodeValue = document.getElementById('pairing-code-value');
+const botPermissionMode = document.getElementById('botPermissionMode');
+const botPermissionHint = document.getElementById('botPermissionHint');
+const botPermissionFeedback = document.getElementById('botPermissionFeedback');
 const accountTargetTips = document.getElementById('account-target-tips');
 const sidebar = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
@@ -117,6 +120,55 @@ let hasLoadedInbox = false;
 let activeInboxChatId = '';
 let inboxConversations = [];
 let isWhatsAppReady = false;
+
+const BOT_PERMISSION_HINTS = {
+  everyone: 'All personal chats and groups can trigger automatic replies.',
+  admins: 'Personal chats still receive replies; only group admins can trigger them.',
+  owner: 'Only the WhatsApp account owner can trigger automatic replies.',
+  off: 'Automatic replies are disabled for all chats.',
+};
+
+function updateBotPermissionHint(mode) {
+  if (botPermissionHint) {
+    botPermissionHint.textContent = BOT_PERMISSION_HINTS[mode] || BOT_PERMISSION_HINTS.everyone;
+  }
+}
+
+if (botPermissionMode) {
+  updateBotPermissionHint(botPermissionMode.value);
+  botPermissionMode.addEventListener('change', async () => {
+    const nextMode = botPermissionMode.value;
+    botPermissionMode.disabled = true;
+    updateBotPermissionHint(nextMode);
+    if (botPermissionFeedback) {
+      botPermissionFeedback.textContent = 'Saving permission...';
+      botPermissionFeedback.style.color = '#5d645d';
+    }
+
+    try {
+      const response = await fetch('/api/bot-permissions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: nextMode }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to save permission');
+      botPermissionMode.value = data.mode;
+      updateBotPermissionHint(data.mode);
+      if (botPermissionFeedback) {
+        botPermissionFeedback.textContent = 'Permission saved';
+        botPermissionFeedback.style.color = '#136f63';
+      }
+    } catch (error) {
+      if (botPermissionFeedback) {
+        botPermissionFeedback.textContent = error.message;
+        botPermissionFeedback.style.color = '#b42318';
+      }
+    } finally {
+      botPermissionMode.disabled = false;
+    }
+  });
+}
 
 const PAGE_TITLE_MAP = {
   account: 'Account',

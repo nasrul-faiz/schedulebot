@@ -9,6 +9,7 @@ const ytSearch = require('yt-search');
 const ffmpegPath = require('ffmpeg-static');
 
 const customCommandStore = require('./customCommandStore');
+const botPermissionStore = require('./botPermissionStore');
 const deletedMessageStore = require('./deletedMessageStore');
 const { sendInteractiveButtons } = require('../lib/interactiveButtons');
 
@@ -990,6 +991,8 @@ class WhatsAppService {
       const chatId = message.key?.remoteJid;
       if (!chatId) continue;
 
+      if (!(await this.canRespondToMessage(chatId, message))) continue;
+
       const content = normalizeMessageContent(message.message) || message.message;
 
       if (!content?.protocolMessage) {
@@ -1047,6 +1050,30 @@ class WhatsAppService {
       if (!matched) continue;
 
       await this.replyWithCustomCommand(chatId, matched);
+    }
+  }
+
+  async canRespondToMessage(chatId, message) {
+    const mode = botPermissionStore.getSettings().mode;
+    if (mode === 'everyone') return true;
+    if (mode === 'off') return false;
+    if (mode === 'owner') {
+      const senderJid = normalizeConnectedJid(message.key?.participant || chatId);
+      const ownerJid = normalizeConnectedJid(this.sock?.user?.id);
+      return Boolean(ownerJid && senderJid && ownerJid === senderJid);
+    }
+    if (!String(chatId).endsWith('@g.us')) return true;
+
+    try {
+      const metadata = await this.sock.groupMetadata(chatId);
+      const participantJid = normalizeConnectedJid(message.key?.participant || chatId);
+      const participant = (metadata.participants || []).find((item) =>
+        normalizeConnectedJid(item.id) === participantJid
+      );
+      return participant?.admin === 'admin' || participant?.admin === 'superadmin';
+    } catch (error) {
+      console.warn(`[WA] Unable to verify group admin permission: ${error.message}`);
+      return false;
     }
   }
 

@@ -6,6 +6,7 @@ const multer = require('multer');
 const scheduleStore = require('../services/scheduleStore');
 const customCommandStore = require('../services/customCommandStore');
 const deletedMessageStore = require('../services/deletedMessageStore');
+const botPermissionStore = require('../services/botPermissionStore');
 
 const uploadDir = path.join(process.cwd(), 'uploads');
 const uploadStorage = multer.diskStorage({
@@ -114,6 +115,7 @@ function createDashboardRouter(whatsappService) {
       commandCategories: customCommandStore.ALLOWED_CATEGORIES,
       mediaTypes: customCommandStore.ALLOWED_MEDIA_TYPES,
       deletedMessages,
+      botPermission: botPermissionStore.getSettings(),
     };
   }
 
@@ -128,6 +130,18 @@ function createDashboardRouter(whatsappService) {
 
   router.get('/api/custom-commands', (req, res) => {
     return res.json({ commands: customCommandStore.listCommands() });
+  });
+
+  router.get('/api/bot-permissions', (req, res) => {
+    return res.json(botPermissionStore.getSettings());
+  });
+
+  router.put('/api/bot-permissions', (req, res) => {
+    try {
+      return res.json(botPermissionStore.updateSettings(req.body || {}));
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
   });
 
   router.post('/api/custom-commands', (req, res) => {

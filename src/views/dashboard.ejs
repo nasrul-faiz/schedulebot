@@ -201,6 +201,26 @@
                   <ul class="tips muted" id="account-target-tips" hidden></ul>
                 </div>
               </article>
+
+              <article class="card">
+                <div class="card-header">
+                  <h2 class="card-title">Bot Respond Permission</h2>
+                  <p class="card-description">Choose who can trigger automatic replies</p>
+                </div>
+                <div class="card-content">
+                  <div class="field">
+                    <label for="botPermissionMode">Respond to</label>
+                    <select id="botPermissionMode">
+                      <option value="everyone" <%= botPermission.mode === 'everyone' ? 'selected' : '' %>>Everyone</option>
+                      <option value="admins" <%= botPermission.mode === 'admins' ? 'selected' : '' %>>Group admins only</option>
+                      <option value="owner" <%= botPermission.mode === 'owner' ? 'selected' : '' %>>Owner only</option>
+                      <option value="off" <%= botPermission.mode === 'off' ? 'selected' : '' %>>No one (disabled)</option>
+                    </select>
+                    <p class="hint" id="botPermissionHint">In admin mode, personal chats still receive replies.</p>
+                  </div>
+                  <p id="botPermissionFeedback" class="feedback" role="status"></p>
+                </div>
+              </article>
             </div>
           </section>
 
